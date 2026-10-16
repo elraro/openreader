@@ -105,6 +105,7 @@ class OoxmlPackage(file: File) : AutoCloseable {
             "bmp" -> "image/bmp"
             "webp" -> "image/webp"
             "svg" -> "image/svg+xml"
+            "pict", "pct" -> return bytes(part)?.takeIf { it.size < 8_000_000 }?.let { Pict.toPngDataUri(it) ?: if (it.size > 522) Pict.toPngDataUri(it.copyOfRange(512, it.size)) else null }
             "emf", "wmf" -> return bytes(part)?.takeIf { it.size < 8_000_000 }?.let { Metafile.toSvgDataUri(it) }
             else -> return null
         }

@@ -57,7 +57,7 @@ object OfficeArt {
                     val dataStart = h + 34
                     if (cbSave <= 0 || dataStart + cbSave > end) return null
                     val raw = if (compression == 0) inflate(d, dataStart, cbSave) else d.copyOfRange(dataStart, dataStart + cbSave)
-                    embeddedImage(raw)
+                    embeddedImage(raw) ?: Pict.toPngDataUri(raw)?.let { Blip(it) }
                 }
                 0xF01D, 0xF02A -> Blip("data:image/jpeg;base64," + Base64.encodeToString(d, body + uids + 1, end - body - uids - 1, Base64.NO_WRAP))
                 0xF01E -> Blip("data:image/png;base64," + Base64.encodeToString(d, body + uids + 1, end - body - uids - 1, Base64.NO_WRAP))

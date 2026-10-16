@@ -511,12 +511,63 @@ class Workbook {
                     "XLOOKUP" -> { val key = scalar(a[0]); val look = a[1] as? Range ?: return XlError("#VALUE!"); val ret = a[2] as? Range ?: return XlError("#VALUE!")
                         val i = look.cells.indexOfFirst { it != null && key != null && (it is Double) == (key is Double) && compare("=", it, key) }
                         if (i < 0) (if (a.size > 3) a[3] else XlError("#N/A")) else ret.cells.getOrNull(i) }
+
+                    "GEOMEAN" -> numbers(a).let { v -> if (v.isEmpty() || v.any { it <= 0 }) XlError("#NUM!") else Math.exp(v.sumOf { Math.log(it) } / v.size) }
+                    "HARMEAN" -> numbers(a).let { v -> if (v.isEmpty() || v.any { it <= 0 }) XlError("#NUM!") else v.size / v.sumOf { 1 / it } }
+                    "DEVSQ" -> numbers(a).let { v -> val m = v.average(); v.sumOf { (it - m) * (it - m) } }
+                    "AVEDEV" -> numbers(a).let { v -> val m = v.average(); v.sumOf { abs(it - m) } / v.size }
+                    "COVARIANCE.P", "COVARIANCE.S", "COVAR" -> { val x = numbers(listOf(a[0])); val y = numbers(listOf(a[1])); val n0 = minOf(x.size, y.size)
+                        if (n0 < 2) XlError("#DIV/0!") else { val mx = x.take(n0).average(); val my = y.take(n0).average()
+                            (0 until n0).sumOf { (x[it] - mx) * (y[it] - my) } / (if (name == "COVARIANCE.S") n0 - 1 else n0) } }
+                    "NA" -> XlError("#N/A")
+                    "TYPE" -> when (scalar(a[0])) { is Double -> 1.0; is String -> 2.0; is Boolean -> 4.0; is XlError -> 16.0; else -> 1.0 }
+                    "ISREF" -> a[0] is Range
+                    "BITAND" -> (num(a[0]).toLong() and num(a[1]).toLong()).toDouble()
+                    "BITOR" -> (num(a[0]).toLong() or num(a[1]).toLong()).toDouble()
+                    "BITXOR" -> (num(a[0]).toLong() xor num(a[1]).toLong()).toDouble()
+                    "BITLSHIFT" -> (num(a[0]).toLong() shl num(a[1]).toInt()).toDouble()
+                    "BITRSHIFT" -> (num(a[0]).toLong() shr num(a[1]).toInt()).toDouble()
+                    "BASE" -> java.lang.Long.toString(num(a[0]).toLong(), num(a[1]).toInt()).uppercase().padStart(if (a.size > 2) num(a[2]).toInt() else 0, '0')
+                    "ARABIC" -> { val m = mapOf('I' to 1, 'V' to 5, 'X' to 10, 'L' to 50, 'C' to 100, 'D' to 500, 'M' to 1000); val r = str(a[0]).uppercase(); var t = 0
+                        for (i in r.indices) { val v = m[r[i]] ?: return XlError("#VALUE!"); val nx = m[r.getOrNull(i + 1)] ?: 0; t += if (v < nx) -v else v }; t.toDouble() }
+                    "CEILING.MATH" -> { val sg = if (a.size > 1) abs(num(a[1])) else 1.0; if (sg == 0.0) 0.0 else Math.ceil(num(a[0]) / sg) * sg }
+                    "FLOOR.MATH" -> { val sg = if (a.size > 1) abs(num(a[1])) else 1.0; if (sg == 0.0) 0.0 else floor(num(a[0]) / sg) * sg }
+                    "NUMBERVALUE" -> str(a[0]).replace(",", "").replace(" ", "").toDoubleOrNull() ?: XlError("#VALUE!")
+                    "TEXTBEFORE" -> { val t0 = str(a[0]); val i = t0.indexOf(str(a[1])); if (i < 0) XlError("#N/A") else t0.substring(0, i) }
+                    "TEXTAFTER" -> { val t0 = str(a[0]); val d = str(a[1]); val i = t0.indexOf(d); if (i < 0) XlError("#N/A") else t0.substring(i + d.length) }
+                    "NORM.S.DIST", "NORMSDIST" -> normCdf(num(a[0]))
+                    "NORM.DIST", "NORMDIST" -> { val x = num(a[0]); val mu = num(a[1]); val sd = num(a[2]); if (sd <= 0) XlError("#NUM!") else if (bool(a[3])) normCdf((x - mu) / sd) else Math.exp(-0.5 * ((x - mu) / sd).pow(2)) / (sd * sqrt(2 * Math.PI)) }
+                    "NORM.S.INV", "NORMSINV" -> normInv(num(a[0]))
+                    "NORM.INV", "NORMINV" -> num(a[1]) + num(a[2]) * normInv(num(a[0]))
+                    "POISSON.DIST", "POISSON" -> { val k = num(a[0]).toInt(); val l = num(a[1]); if (bool(a[2])) (0..k).sumOf { poisson(it, l) } else poisson(k, l) }
+                    "BINOM.DIST", "BINOMDIST" -> { val k = num(a[0]).toInt(); val nn = num(a[1]).toInt(); val p = num(a[2])
+                        fun pmf(i: Int) = (0 until i).fold(1.0) { acc, j -> acc * (nn - j) / (j + 1) } * p.pow(i) * (1 - p).pow(nn - i)
+                        if (bool(a[3])) (0..k).sumOf { pmf(it) } else pmf(k) }
+                    "EXPON.DIST", "EXPONDIST" -> { val x = num(a[0]); val l = num(a[1]); if (bool(a[2])) 1 - Math.exp(-l * x) else l * Math.exp(-l * x) }
                     else -> XlError("#NAME?")
                 }
             } catch (e: IllegalStateException) { return XlError(e.message ?: "#VALUE!") }
             catch (e: IllegalArgumentException) { return XlError("#VALUE!") }
             catch (e: IndexOutOfBoundsException) { return XlError("#VALUE!") }
         }
+
+        private fun erf(x: Double): Double { // Abramowitz-Stegun 7.1.26
+            val t = 1 / (1 + 0.3275911 * abs(x))
+            val y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)
+            return if (x >= 0) y else -y
+        }
+        private fun normCdf(z: Double) = 0.5 * (1 + erf(z / sqrt(2.0)))
+        private fun normInv(p: Double): Double { // Acklam's approximation
+            if (p <= 0 || p >= 1) throw IllegalArgumentException("num")
+            val a = doubleArrayOf(-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+            val b = doubleArrayOf(-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01)
+            val c = doubleArrayOf(-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+            val d = doubleArrayOf(7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00)
+            return if (p < 0.02425) { val q = sqrt(-2 * Math.log(p)); (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1) }
+            else if (p > 1 - 0.02425) { val q = sqrt(-2 * Math.log(1 - p)); -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1) }
+            else { val q = p - 0.5; val r = q * q; (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1) }
+        }
+        private fun poisson(k: Int, l: Double): Double = Math.exp(-l + k * Math.log(l) - (2..k).sumOf { Math.log(it.toDouble()) })
 
         private fun round(v: Double, digits: Int, mode: Int): Double {
             val f = 10.0.pow(digits)

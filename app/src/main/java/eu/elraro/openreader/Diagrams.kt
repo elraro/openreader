@@ -25,15 +25,25 @@ object Diagrams {
         val drawingPart = drawingRel?.let { rels[it] }
         val drawing = drawingPart?.let { try { pkg.xml(it) } catch (e: Exception) { null } }
         if (drawing != null) return renderDrawing(drawing, scheme, wPx, hPx)
-        val items = dm.findAll("pt").filter { it.attr("type") == null || it.attr("type") == "node" }
-            .map { p -> p.findAll("t").joinToString("") { it.text.toString() } }.filter { it.isNotBlank() }
-        if (items.isEmpty()) return null
-        // no cached drawing: show the nodes as boxes in reading order
-        val accent = scheme.get("accent1") ?: "4472C4"
-        val boxes = items.joinToString("") {
-            "<div style=\"background:#$accent;color:#fff;padding:10px 16px;border-radius:8px;min-width:80px;text-align:center;font-size:14px\">${esc(it)}</div>"
+        // no cached drawing: lay the nodes out as rows by depth in the parent/child connections
+        val pts = dm.findAll("pt").filter { it.attr("type") == null || it.attr("type") == "node" }
+        val text = pts.associate { (it.attr("modelId") ?: "") to it.findAll("t").joinToString("") { t -> t.text.toString() } }.filter { it.value.isNotBlank() }
+        if (text.isEmpty()) return null
+        val parent = HashMap<String, String>()
+        for (c in dm.findAll("cxn")) {
+            if (c.attr("type") != null && c.attr("type") != "parOf") continue
+            val src = c.attr("srcId") ?: continue; val dst = c.attr("destId") ?: continue
+            if (src in text && dst in text) parent[dst] = src
         }
-        return "<div style=\"display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;width:${f(wPx)}px;min-height:${f(hPx)}px\">$boxes</div>"
+        fun depth(id: String): Int { var d = 0; var cur = id; while (parent[cur] != null && d < 20) { cur = parent[cur]!!; d++ }; return d }
+        val rows = text.keys.groupBy { depth(it) }.toSortedMap()
+        val accent = scheme.get("accent1") ?: "4472C4"
+        val body = rows.entries.joinToString("") { (lvl, ids) ->
+            "<div style=\"display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px\">" + ids.joinToString("") {
+                "<div style=\"background:#${ColorScheme.tint(accent, (lvl * 0.15).coerceAtMost(0.6))};color:${if (lvl < 3) "#fff" else "#222"};padding:10px 16px;border-radius:8px;min-width:80px;text-align:center;font-size:14px\">${esc(text[it].orEmpty())}</div>"
+            } + "</div>"
+        }
+        return "<div style=\"width:${f(wPx)}px;min-height:${f(hPx)}px;display:flex;flex-direction:column;justify-content:center\">$body</div>"
     }
 
     private fun renderDrawing(root: Node, scheme: ColorScheme, wPx: Double, hPx: Double): String {
