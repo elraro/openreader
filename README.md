@@ -12,7 +12,7 @@ Android app that opens Microsoft Office documents — `.docx`, `.xlsx`, `.pptx` 
 - **Settings** (overflow menu): light/dark/system theme, dark mode for documents, language (follows the device language by default; English, Spanish, Catalan, French, German, Italian, Portuguese, Russian, Chinese, Japanese), link to the source repository and a donation link (paypal.me/elraro).
 - Known gaps: Word's own automatic pagination (only explicit/recorded page breaks are honoured), macros, EMF+ only images, 3-D/radar/stock/map chart styling, SmartArt without a cached drawing (shown as a plain list), functions outside the common set (shown as #NAME?).
 - Opens files from the in-app picker or from other apps (`ACTION_VIEW`).
-- Legacy formats (OLE2) are read by a built-in parser and shown as text/tables only: no fonts, colours or images. Old `.ppt` files that keep edit history may show earlier slide versions. Password-protected files are rejected.
+- Legacy formats (OLE2) are read by a built-in parser. `.xls` keeps cell fonts, colours, fills, borders, alignment, widths and merges; `.doc` and `.ppt` are shown as text/tables only (no fonts, colours or images). Old `.ppt` files that keep edit history may show earlier slide versions. Password-protected files are rejected.
 
 ## Build
 

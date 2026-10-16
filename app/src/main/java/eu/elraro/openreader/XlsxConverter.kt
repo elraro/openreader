@@ -275,25 +275,6 @@ $extraCss
         return htmlPage(title, css, "<div class=\"tabs\">$tabs</div>$body")
     }
 
-    /** rows: (1-based row number, column index -> (text, isNumeric)). Plain grid used by the legacy .xls reader. */
-    internal fun renderGrid(grid: List<Pair<Int, Map<Int, Pair<String, Boolean>>>>, maxCol: Int, out: StringBuilder) {
-        out.append("<div class=\"wrap\"><table class=\"sh grid\" style=\"width:${40 + (maxCol + 1) * 80}px\"><colgroup><col style=\"width:40px\">")
-        for (c in 0..maxCol) out.append("<col style=\"width:80px\">")
-        out.append("</colgroup><tr><th></th>")
-        for (c in 0..maxCol) out.append("<th>${colName(c)}</th>")
-        out.append("</tr>")
-        for ((r, cells) in grid) {
-            out.append("<tr><th>$r</th>")
-            for (c in 0..maxCol) {
-                val v = cells[c]
-                if (v == null) out.append("<td></td>")
-                else out.append(if (v.second) "<td class=\"n\">" else "<td>").append(esc(v.first)).append("</td>")
-            }
-            out.append("</tr>")
-        }
-        out.append("</table></div>")
-    }
-
     private fun loadShared(pkg: OoxmlPackage): List<String> =
         pkg.xml("xl/sharedStrings.xml")?.all("si")?.map { richText(it) }.orEmpty()
 
@@ -386,7 +367,7 @@ internal class XStyles(root: Node?, private val scheme: ColorScheme) {
         }
     }
 
-    private val INDEXED = listOf(
+    val INDEXED = listOf(
         "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "000000", "FFFFFF", "FF0000", "00FF00", "0000FF",
         "FFFF00", "FF00FF", "00FFFF", "800000", "008000", "000080", "808000", "800080", "008080", "C0C0C0", "808080", "9999FF", "993366",
         "FFFFCC", "CCFFFF", "660066", "FF8080", "0066CC", "CCCCFF", "000080", "FF00FF", "FFFF00", "00FFFF", "800080", "800000", "008080",

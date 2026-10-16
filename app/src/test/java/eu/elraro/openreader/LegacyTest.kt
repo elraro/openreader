@@ -22,7 +22,7 @@ class LegacyTest {
         val html = XlsConverter.toHtml(load("SampleSS.xls"), "t")
         assertTrue(html, html.contains("Test spreadsheet"))
         assertTrue(html.contains("Sheet Number 2"))
-        assertTrue(html.contains("<td class=\"n\">13</td>"))
+        assertTrue(Regex("<td class=\"n x\\d+\">13</td>").containsMatchIn(html))
     }
 
     @Test
