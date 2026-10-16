@@ -39,7 +39,7 @@ object PptConverter {
         val kind: Int, val spid: Int, var x: Double, var y: Double, var w: Double, var h: Double, val opt: Map<Int, Int>,
         val blocks: List<TextBlock>, val placeholder: Int, val outlineRef: Int, val flipH: Boolean, val flipV: Boolean,
         val hasAnchor: Boolean,
-    )
+    ) { var extraRot = 0.0 }
 
     private class Page(val shapes: List<Shape>, val scheme: IntArray?, val background: Int?, val levels: Map<Int, List<Level>>, val bgOpt: Map<Int, Int>?)
 
@@ -215,7 +215,29 @@ body{background:#d9d9d9;padding:8px 0}
         56 to "50% 0,100% 38%,81% 100%,19% 100%,0 38%", 66 to "100% 25%,40% 25%,40% 0,0 50%,40% 100%,40% 75%,100% 75%",
         67 to "25% 0,75% 0,75% 60%,100% 60%,50% 100%,0 60%,25% 60%", 68 to "50% 0,100% 40%,75% 40%,75% 100%,25% 100%,25% 40%,0 40%",
         69 to "0 50%,25% 0,25% 30%,75% 30%,75% 0,100% 50%,75% 100%,75% 70%,25% 70%,25% 100%",
+        55 to "0 0,75% 0,100% 50%,75% 100%,0 100%,25% 50%", 110 to "50% 0,100% 50%,50% 100%,0 50%", 127 to "50% 0,100% 50%,50% 100%,0 50%",
+        111 to "20% 0,100% 0,80% 100%,0 100%", 117 to "25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%",
+        118 to "0 20%,100% 0,100% 100%,0 100%", 119 to "0 0,100% 0,80% 100%,20% 100%", 126 to "0 0,100% 0,0 100%,100% 100%",
+        128 to "50% 0,100% 100%,0 100%", 129 to "0 0,100% 0,50% 100%", 65 to "0 0,100% 0,100% 80%,80% 100%,0 100%",
+        73 to "40% 0,10% 55%,45% 55%,30% 100%,90% 40%,55% 40%,75% 0",
     )
+
+    private fun star(n: Int, inner: Double): String = (0 until n * 2).joinToString(",") { i ->
+        val a = -Math.PI / 2 + Math.PI * i / n
+        val r = if (i % 2 == 0) 50.0 else 50.0 * inner
+        "${f(50 + r * Math.cos(a))}% ${f(50 + r * Math.sin(a))}%"
+    }
+
+    /** Polygons computed from a formula: stars and the heart. */
+    private fun generated(kind: Int): String? = when (kind) {
+        187 -> star(4, 0.38); 58 -> star(8, 0.72); 59 -> star(16, 0.85); 92 -> star(24, 0.88); 60 -> star(32, 0.9); 18 -> star(10, 0.8)
+        74 -> (0 until 40).joinToString(",") { i ->
+            val t = 2 * Math.PI * i / 40
+            val x = 16 * Math.pow(Math.sin(t), 3.0); val y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)
+            "${f(50 + x * 3.0)}% ${f(45 - y * 2.8)}%"
+        }
+        else -> null
+    }
 
     private fun masterFor(master: Page?, ph: Int): Shape? {
         master ?: return null
@@ -262,43 +284,72 @@ body{background:#d9d9d9;padding:8px 0}
         return Page(shapes, scheme, background, levels, bgOpt)
     }
 
-    /** group mapping: (childLeft, childTop, childW, childH) -> (x, y, w, h) in master units */
-    private class Map2(val cl: Double, val ct: Double, val cw: Double, val ch: Double, val x: Double, val y: Double, val w: Double, val h: Double) {
+    /** group mapping: child coordinate space (cl, ct, cw, ch) -> placed frame (x, y, w, h) in master units, with rotation in degrees */
+    private class Map2(val cl: Double, val ct: Double, val cw: Double, val ch: Double, val x: Double, val y: Double, val w: Double, val h: Double, val rot: Double = 0.0) {
         fun mx(v: Double) = if (cw == 0.0) v else x + (v - cl) * w / cw
         fun my(v: Double) = if (ch == 0.0) v else y + (v - ct) * h / ch
         fun sw(v: Double) = if (cw == 0.0) v else v * w / cw
         fun sh(v: Double) = if (ch == 0.0) v else v * h / ch
     }
 
+    /** Places a frame given in a group's child space on the slide: [x, y, w, h, rotation added by enclosing groups]. */
+    private fun place(map: Map2?, x: Double, y: Double, w: Double, h: Double): DoubleArray {
+        if (map == null) return doubleArrayOf(x, y, w, h, 0.0)
+        var nx = map.mx(x); var ny = map.my(y); val nw = map.sw(w); val nh = map.sh(h)
+        if (map.rot != 0.0) {
+            val gx = map.x + map.w / 2; val gy = map.y + map.h / 2
+            val cx = nx + nw / 2 - gx; val cy = ny + nh / 2 - gy
+            val rad = Math.toRadians(map.rot)
+            val rx = cx * Math.cos(rad) - cy * Math.sin(rad); val ry = cx * Math.sin(rad) + cy * Math.cos(rad)
+            nx = gx + rx - nw / 2; ny = gy + ry - nh / 2
+        }
+        return doubleArrayOf(nx, ny, nw, nh, map.rot)
+    }
+
+    private fun anchorOf(ctx: Ctx, parts: List<Rec>): DoubleArray? { // x, y, w, h, isChildAnchor(1/0)
+        val b = ctx.b
+        parts.firstOrNull { it.type == 0xF010 }?.let { a ->
+            if (a.len == 8) { val y = b.getShort(a.body).toDouble(); val x = b.getShort(a.body + 2).toDouble(); return doubleArrayOf(x, y, b.getShort(a.body + 4) - x, b.getShort(a.body + 6) - y, 0.0) }
+            if (a.len >= 16) { val y = b.getInt(a.body).toDouble(); val x = b.getInt(a.body + 4).toDouble(); return doubleArrayOf(x, y, b.getInt(a.body + 8) - x, b.getInt(a.body + 12) - y, 0.0) }
+        }
+        parts.firstOrNull { it.type == 0xF00F }?.let { a ->
+            if (a.len >= 16) { val x = b.getInt(a.body).toDouble(); val y = b.getInt(a.body + 4).toDouble(); return doubleArrayOf(x, y, b.getInt(a.body + 8) - x, b.getInt(a.body + 12) - y, 1.0) }
+        }
+        return null
+    }
+
     private fun readGroup(ctx: Ctx, spgr: Rec, listTexts: List<TextBlock>, map: Map2?, used: MutableSet<Int> = HashSet()): List<Shape> {
         val b = ctx.b
         val out = ArrayList<Shape>()
         for (sp in children(b, spgr.body, spgr.end)) {
-            if (sp.type == 0xF003) { out.addAll(readGroup(ctx, sp, listTexts, map, used)); continue }
+            if (sp.type == 0xF003) {
+                // nested group: its first shape describes the frame and the child coordinate space
+                val desc = children(b, sp.body, sp.end).firstOrNull { it.type == 0xF004 }?.let { children(b, it.body, it.end) }.orEmpty()
+                val coord = desc.firstOrNull { it.type == 0xF009 }
+                val fr = anchorOf(ctx, desc)
+                if (coord != null && fr != null) {
+                    val pl = place(map, fr[0], fr[1], fr[2], fr[3])
+                    val ownRot = desc.firstOrNull { it.type == 0xF00B }?.let { readOpt(b, it)[0x0004] }?.let { it / 65536.0 } ?: 0.0
+                    val nm = Map2(b.getInt(coord.body).toDouble(), b.getInt(coord.body + 4).toDouble(),
+                        (b.getInt(coord.body + 8) - b.getInt(coord.body)).toDouble(), (b.getInt(coord.body + 12) - b.getInt(coord.body + 4)).toDouble(),
+                        pl[0], pl[1], pl[2], pl[3], pl[4] + ownRot)
+                    out.addAll(readGroup(ctx, sp, listTexts, nm, used))
+                } else out.addAll(readGroup(ctx, sp, listTexts, map, used))
+                continue
+            }
             if (sp.type != 0xF004) continue
             val parts = children(b, sp.body, sp.end)
-            val isGroup = parts.any { it.type == 0xF003 }
+            if (parts.any { it.type == 0xF009 }) continue // group descriptor, not a shape
             val sprec = parts.firstOrNull { it.type == 0xF00A }
             val spid = sprec?.let { b.getInt(it.body) } ?: 0
             val flags = sprec?.let { b.getInt(it.body + 4) } ?: 0
             val kind = sprec?.inst ?: 0
             val opt = parts.firstOrNull { it.type == 0xF00B }?.let { readOpt(b, it) } ?: emptyMap()
-            var x = 0.0; var y = 0.0; var w = 0.0; var h = 0.0; var anchored = false
-            parts.firstOrNull { it.type == 0xF010 }?.let { a ->
-                if (a.len == 8) { y = b.getShort(a.body).toDouble(); x = b.getShort(a.body + 2).toDouble(); w = b.getShort(a.body + 4) - x; h = b.getShort(a.body + 6) - y; anchored = true }
-                else if (a.len >= 16) { y = b.getInt(a.body).toDouble(); x = b.getInt(a.body + 4).toDouble(); w = b.getInt(a.body + 8) - x; h = b.getInt(a.body + 12) - y; anchored = true }
-            } ?: parts.firstOrNull { it.type == 0xF00F }?.let { a ->
-                if (a.len >= 16) { x = b.getInt(a.body).toDouble(); y = b.getInt(a.body + 4).toDouble(); w = b.getInt(a.body + 8) - x; h = b.getInt(a.body + 12) - y; anchored = true
-                    if (map != null) { x = map.mx(x); y = map.my(y); w = map.sw(w); h = map.sh(h) } }
-            }
-            if (isGroup) {
-                val grp = parts.first { it.type == 0xF003 }
-                val coord = parts.firstOrNull { it.type == 0xF009 }
-                // coordinate space of the children is given by the group's Spgr record (left, top, right, bottom)
-                val cl = coord?.let { b.getInt(it.body).toDouble() } ?: x; val ct = coord?.let { b.getInt(it.body + 4).toDouble() } ?: y
-                val cr = coord?.let { b.getInt(it.body + 8).toDouble() } ?: (x + w); val cb = coord?.let { b.getInt(it.body + 12).toDouble() } ?: (y + h)
-                out.addAll(readGroup(ctx, grp, listTexts, Map2(cl, ct, cr - cl, cb - ct, x, y, w, h), used))
-                continue
+            val fr = anchorOf(ctx, parts)
+            var x = 0.0; var y = 0.0; var w = 0.0; var h = 0.0; val anchored = fr != null; var extraRot = 0.0
+            if (fr != null) {
+                if (map != null) { val pl = place(map, fr[0], fr[1], fr[2], fr[3]); x = pl[0]; y = pl[1]; w = pl[2]; h = pl[3]; extraRot = pl[4] }
+                else { x = fr[0]; y = fr[1]; w = fr[2]; h = fr[3] }
             }
             // text: placeholders point into the slide list, text boxes carry their own
             var placeholder = 0; var outline = -1
@@ -325,8 +376,7 @@ body{background:#d9d9d9;padding:8px 0}
                     STYLE_TEXT_PROP -> if (cur != null) { blocks[blocks.size - 1] = TextBlock(cur.type, cur.text, ctx.s.copyOfRange(r.body, r.end)) }
                 }
             }
-            if (map != null && anchored && parts.none { it.type == 0xF00F }) { x = map.mx(x); y = map.my(y) }
-            out.add(Shape(kind, spid, x, y, w, h, opt, blocks, placeholder, outline, flags and 0x40 != 0, flags and 0x80 != 0, anchored))
+            out.add(Shape(kind, spid, x, y, w, h, opt, blocks, placeholder, outline, flags and 0x40 != 0, flags and 0x80 != 0, anchored).also { it.extraRot = extraRot })
         }
         return out
     }
@@ -409,6 +459,17 @@ body{background:#d9d9d9;padding:8px 0}
         return null
     }
 
+    /** Colour of a text run: the top byte is a colour-scheme index, or 0xFE when the RGB in the low bytes is meant. */
+    private fun textColor(v: Int, scheme: IntArray?): String? {
+        val top = v ushr 24
+        val c = when {
+            top == 0xFE -> v and 0xFFFFFF
+            top in 0..7 -> scheme?.getOrNull(top) ?: return null
+            else -> return null
+        }
+        return "#%02x%02x%02x".format(c and 255, (c shr 8) and 255, (c shr 16) and 255)
+    }
+
     private fun blipUri(ctx: Ctx, pib: Int): String? = ctx.blipCache.getOrPut(pib) {
         val bse = ctx.bse.getOrNull(pib - 1) ?: return@getOrPut null
         val b = ctx.b
@@ -426,7 +487,7 @@ body{background:#d9d9d9;padding:8px 0}
         val x = u(a.x); val y = u(a.y); val w = u(a.w); val h = u(a.h)
         val css = StringBuilder("left:${f(x)}px;top:${f(y)}px;width:${f(w)}px;height:${f(h)}px;")
         val tr = ArrayList<String>()
-        val rot = (opt[0x0004] ?: 0) / 65536.0
+        val rot = (opt[0x0004] ?: 0) / 65536.0 + sh.extraRot
         if (rot != 0.0) tr.add("rotate(${f(rot)}deg)")
         if (sh.flipH) tr.add("scaleX(-1)"); if (sh.flipV) tr.add("scaleY(-1)")
         if (tr.isNotEmpty()) css.append("transform:${tr.joinToString(" ")};")
@@ -447,7 +508,11 @@ body{background:#d9d9d9;padding:8px 0}
             val lc = opt[0x01C0]?.let { color(it, scheme) } ?: "#000000"
             css.append("border:${f(maxOf(1.0, (opt[0x01CB] ?: 9525) / 9525.0))}px solid $lc;")
         }
-        POLYGONS[sh.kind]?.let { css.append("clip-path:polygon($it);") }
+        (POLYGONS[sh.kind] ?: generated(sh.kind))?.let { css.append("clip-path:polygon($it);") }
+        if (sh.kind == 23) css.append("-webkit-mask-image:radial-gradient(closest-side,transparent 52%,#000 53%);")
+        if (sh.kind == 22) css.append("border-radius:50% / 12%;")
+        if (sh.kind == 116 || sh.kind == 176 || sh.kind == 62) css.append("border-radius:${f(minOf(w, h) * (if (sh.kind == 116) 0.5 else 0.17))}px;")
+        if (sh.kind == 63 || sh.kind == 120 || sh.kind == 124 || sh.kind == 125) css.append("border-radius:50%;")
         when (sh.kind) { 3 -> css.append("border-radius:50%;"); 2 -> css.append("border-radius:${f(minOf(w, h) * 0.17)}px;") }
         val ml = (opt[0x0081] ?: 91440) / 9525.0; val mt = (opt[0x0082] ?: 45720) / 9525.0
         val mr = (opt[0x0083] ?: 91440) / 9525.0; val mb = (opt[0x0084] ?: 45720) / 9525.0
@@ -531,7 +596,7 @@ body{background:#d9d9d9;padding:8px 0}
                     if (fl and 2 != 0) st.append("font-style:italic;")
                     if (fl and 4 != 0) st.append("text-decoration:underline;")
                 }
-                cf.color?.let { c -> color(c, scheme)?.let { st.append("color:$it;") } }
+                cf.color?.let { c -> textColor(c, scheme)?.let { st.append("color:$it;") } }
                 cf.pos?.let { if (it > 0) st.append("vertical-align:super;font-size:smaller;") else if (it < 0) st.append("vertical-align:sub;font-size:smaller;") }
                 sb.append("<span style=\"$st\">").append(esc(seg).replace("\u000b", "<br>")).append("</span>")
                 any = true
