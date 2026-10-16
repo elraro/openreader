@@ -107,7 +107,9 @@ class Cfb private constructor(private val data: ByteBuffer) {
     companion object {
         private val MAGIC = byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte(), 0xA1.toByte(), 0xB1.toByte(), 0x1A, 0xE1.toByte())
 
-        fun isCfb(bytes: ByteArray) = bytes.size >= 512 && MAGIC.indices.all { bytes[it] == MAGIC[it] }
+        fun hasMagic(bytes: ByteArray) = bytes.size >= MAGIC.size && MAGIC.indices.all { bytes[it] == MAGIC[it] }
+
+        fun isCfb(bytes: ByteArray) = bytes.size >= 512 && hasMagic(bytes)
 
         fun parse(bytes: ByteArray): Cfb = Cfb(ByteBuffer.wrap(bytes))
     }

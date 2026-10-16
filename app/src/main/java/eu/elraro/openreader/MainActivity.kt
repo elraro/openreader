@@ -155,7 +155,13 @@ class MainActivity : Activity() {
         spinner.visibility = View.VISIBLE
         val name = displayName(uri)
         worker.execute {
-            val result = runCatching { convert(uri, name) }
+            val result = try {
+                Result.success(convert(uri, name))
+            } catch (e: OutOfMemoryError) {
+                Result.failure(UnsupportedFormat(getString(R.string.error_too_large)))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
             runOnUiThread {
                 result.onSuccess { html ->
                     docTitle = name
@@ -178,7 +184,9 @@ class MainActivity : Activity() {
         val tmp = File(cacheDir, "current.ooxml")
         contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } }
             ?: throw IllegalStateException("Cannot open file")
-        if (Cfb.isCfb(tmp.readBytes())) return convertLegacy(tmp, name)
+        val head = ByteArray(8)
+        tmp.inputStream().use { it.read(head) }
+        if (Cfb.hasMagic(head)) return convertLegacy(tmp, name)
         val pkg = try {
             OoxmlPackage(tmp)
         } catch (e: java.util.zip.ZipException) {

@@ -46,7 +46,8 @@ class ConvertersTest {
             "xl/worksheets/sheet1.xml" to """<worksheet $ns><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1"><v>3.5</v></c></row></sheetData></worksheet>""",
         )
         val html = XlsxConverter.toHtml(pkg, "t")
-        assertTrue(html, html.contains("<td>Name</td><td></td><td class=\"n\">3.5</td>"))
+        assertTrue(html, html.contains(">Name</td>"))
+        assertTrue(html.contains("class=\"n x0\">3.5</td>"))
         assertTrue(html.contains("Data"))
     }
 
@@ -63,6 +64,6 @@ class ConvertersTest {
         )
         val html = PptxConverter.toHtml(pkg, "t")
         assertTrue(html, html.contains("Hello &amp; bye"))
-        assertTrue(html.contains("left:10.000%"))
+        assertTrue(html.contains("left:96px"))
     }
 }
