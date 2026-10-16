@@ -8,7 +8,9 @@ Android app that opens Microsoft Office documents — `.docx`, `.xlsx`, `.pptx` 
   - PowerPoint: slide/layout/master inheritance, theme colours and fonts, placeholders, bullets, shapes, pictures with cropping, tables, groups, speaker notes.
   - Fonts: Calibri, Cambria, Arial, Times New Roman and Courier New are replaced by bundled metric-compatible fonts (Carlito, Caladea, Liberation; SIL OFL) so line breaks match.
 - **Export to PDF**: toolbar action opens the system print dialog; choose *Save as PDF*.
-- Known gaps: Word's own automatic pagination (only explicit/recorded page breaks are honoured), charts, SmartArt, EMF/WMF images, macros, tracked-change markup, formulas without a stored result.
+  - Charts (bar/column, line, area, pie/doughnut, scatter) in Word, Excel and PowerPoint, drawn as SVG from the chart data; SmartArt via its cached drawing; EMF/WMF images converted to SVG; tracked changes shown as insertions/deletions; spreadsheet formulas without a stored result are calculated (common functions).
+- **Settings** (overflow menu): light/dark/system theme, dark mode for documents, language (follows the device language by default; English, Spanish, Catalan, French, German, Italian, Portuguese, Russian, Chinese, Japanese), link to the source repository and a donation link (paypal.me/elraro).
+- Known gaps: Word's own automatic pagination (only explicit/recorded page breaks are honoured), macros, EMF+ only images, 3-D/radar/stock/map chart styling, SmartArt without a cached drawing (shown as a plain list), functions outside the common set (shown as #NAME?).
 - Opens files from the in-app picker or from other apps (`ACTION_VIEW`).
 - Legacy formats (OLE2) are read by a built-in parser and shown as text/tables only: no fonts, colours or images. Old `.ppt` files that keep edit history may show earlier slide versions. Password-protected files are rejected.
 

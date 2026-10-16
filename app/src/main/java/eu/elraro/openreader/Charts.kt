@@ -230,7 +230,8 @@ object Charts {
         val percent = all.any { it.first.child("grouping")?.attr("val") == "percentStacked" }
         val fmt = if (percent) "0%" else series.firstOrNull()?.fmt?.takeIf { it != "General" && !it.contains("@") } ?: "General"
 
-        val labelW = max(fs * 3.0, listOf(vmin, vmax).maxOf { NumFmt.format(it, fmt).length } * fs * 0.6) + 6
+        val labelW = if (horizontal) min((r - l) / 3, max(fs * 3.0, (series.maxByOrNull { it.cats.size }?.cats?.maxOfOrNull { it.take(14).length } ?: 3) * fs * 0.55) + 6)
+            else max(fs * 3.0, listOf(vmin, vmax).maxOf { NumFmt.format(it, fmt).length } * fs * 0.6) + 6
         val catLabelH = fs * 1.8
         val px0 = l + labelW + 4; val px1 = r - 6; val py0 = t + 6
         val py1 = b - catLabelH
