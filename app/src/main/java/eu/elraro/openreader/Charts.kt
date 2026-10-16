@@ -24,6 +24,7 @@ object Charts {
 
     fun svg(chartSpace: Node, scheme: ColorScheme, w: Double, h: Double, resolve: ((String) -> List<Any?>?)? = null): String {
         resolver = resolve
+        if (chartSpace.child("chartData") != null) return ChartEx.svg(chartSpace, scheme, w, h)
         val chart = chartSpace.child("chart") ?: return ""
         val plot = chart.child("plotArea") ?: return ""
         val sb = StringBuilder()

@@ -43,7 +43,7 @@ class Workbook {
         if (cell.state == 1) return XlError("#REF!") // circular
         cell.state = 1
         cell.value = try {
-            Parser(this, sheet, cell.formula, cell.dr, cell.dc).evaluate()
+            Parser(this, sheet, cell.formula, cell.dr, cell.dc, row, col).evaluate()
         } catch (e: StackOverflowError) { XlError("#VALUE!") } catch (e: Exception) { XlError("#VALUE!") }
         cell.state = 2
         return cell.value
@@ -53,7 +53,7 @@ class Workbook {
         fun at(r: Int, c: Int) = cells[r * cols + c]
     }
 
-    private class Parser(val wb: Workbook, val sheet: String, val src: String, val dr: Int, val dc: Int) {
+    private class Parser(val wb: Workbook, val sheet: String, val src: String, val dr: Int, val dc: Int, val myRow: Int = 0, val myCol: Int = 0) {
         var p = 0
 
         fun evaluate(): Any? {
@@ -444,6 +444,73 @@ class Workbook {
                     "MAXA" -> flat(a).mapNotNull { it as? Double }.maxOrNull() ?: 0.0
                     "MINA" -> flat(a).mapNotNull { it as? Double }.minOrNull() ?: 0.0
                     "AVERAGEA" -> flat(a).filter { it != null }.map { if (it is Double) it else if (it is Boolean) (if (it) 1.0 else 0.0) else 0.0 }.let { if (it.isEmpty()) XlError("#DIV/0!") else it.average() }
+
+                    "PERCENTILE", "PERCENTILE.INC", "QUARTILE", "QUARTILE.INC" -> { val v = numbers(listOf(a[0])).sorted(); if (v.isEmpty()) XlError("#NUM!") else {
+                        val p = if (name.startsWith("QUART")) num(a[1]) / 4 else num(a[1]); if (p < 0 || p > 1) XlError("#NUM!") else {
+                            val pos = p * (v.size - 1); val lo = floor(pos).toInt(); val hi = Math.ceil(pos).toInt(); v[lo] + (v[hi] - v[lo]) * (pos - lo) } } }
+                    "MODE", "MODE.SNGL" -> { val v = numbers(a); val m = v.groupingBy { it }.eachCount(); val best = m.maxByOrNull { it.value }; if (best == null || best.value < 2) XlError("#N/A") else best.key }
+                    "CORREL", "SLOPE", "INTERCEPT", "RSQ", "FORECAST" -> {
+                        val yr = (if (name == "FORECAST") a[1] else a[0]) as? Range; val xr = (if (name == "FORECAST") a[2] else a[1]) as? Range
+                        if (yr == null || xr == null) XlError("#VALUE!") else {
+                            val pts = yr.cells.indices.mapNotNull { i -> val y = yr.cells[i] as? Double; val x = xr.cells.getOrNull(i) as? Double; if (x != null && y != null) x to y else null }
+                            if (pts.size < 2) XlError("#DIV/0!") else {
+                                val mx = pts.map { it.first }.average(); val my = pts.map { it.second }.average()
+                                val sxx = pts.sumOf { (it.first - mx) * (it.first - mx) }; val syy = pts.sumOf { (it.second - my) * (it.second - my) }
+                                val sxy = pts.sumOf { (it.first - mx) * (it.second - my) }
+                                if (sxx == 0.0 || (name != "SLOPE" && name != "INTERCEPT" && name != "FORECAST" && syy == 0.0)) XlError("#DIV/0!") else when (name) {
+                                    "CORREL" -> sxy / sqrt(sxx * syy); "RSQ" -> (sxy * sxy) / (sxx * syy); "SLOPE" -> sxy / sxx
+                                    "INTERCEPT" -> my - sxy / sxx * mx; else -> my - sxy / sxx * mx + sxy / sxx * num(a[0]) } } } }
+                    "NPV" -> { val r = num(a[0]); numbers(a.drop(1)).withIndex().sumOf { (i, c) -> c / (1 + r).pow(i + 1) } }
+                    "IRR" -> { val cf = numbers(listOf(a[0])); var r = if (a.size > 1) num(a[1]) else 0.1; var ok = false
+                        for (it in 0 until 100) { var f = 0.0; var d = 0.0; for ((i, c) in cf.withIndex()) { f += c / (1 + r).pow(i); d -= i * c / (1 + r).pow(i + 1) }
+                            if (abs(f) < 1e-9) { ok = true; break }; if (d == 0.0) break; r -= f / d }
+                        if (ok) r else XlError("#NUM!") }
+                    "NPER" -> { val r = num(a[0]); val pmt = num(a[1]); val pv = num(a[2]); val fv = if (a.size > 3) num(a[3]) else 0.0
+                        if (r == 0.0) -(pv + fv) / pmt else Math.log((pmt - fv * r) / (pmt + pv * r)) / Math.log(1 + r) }
+                    "SLN" -> (num(a[0]) - num(a[1])) / num(a[2])
+                    "SUMSQ" -> numbers(a).sumOf { it * it }
+                    "SUMX2MY2" -> { val x = numbers(listOf(a[0])); val y = numbers(listOf(a[1])); x.indices.sumOf { x[it] * x[it] - y.getOrElse(it) { 0.0 } * y.getOrElse(it) { 0.0 } } }
+                    "SUMX2PY2" -> { val x = numbers(listOf(a[0])); val y = numbers(listOf(a[1])); x.indices.sumOf { x[it] * x[it] + y.getOrElse(it) { 0.0 } * y.getOrElse(it) { 0.0 } } }
+                    "ROW" -> if (a.isEmpty()) (myRow + 1).toDouble() else 1.0
+                    "COLUMN" -> if (a.isEmpty()) (myCol + 1).toDouble() else 1.0
+                    "ADDRESS" -> { var c = num(a[1]).toInt(); val sb = StringBuilder(); while (c > 0) { sb.insert(0, 'A' + (c - 1) % 26); c = (c - 1) / 26 }; "$" + sb + "$" + num(a[0]).toInt() }
+                    "INDIRECT" -> { val ref = str(a[0]); wb.rangeValues(if ('!' in ref) ref else sheet + "!" + ref)?.let { v -> if (v.size == 1) v[0] else XlError("#VALUE!") } ?: XlError("#REF!") }
+                    "CLEAN" -> str(a[0]).filter { it >= ' ' }
+                    "DOLLAR" -> NumFmt.format(num(a[0]), "\$#,##0.00")
+                    "FIXED" -> NumFmt.format(num(a[0]), if (a.size > 2 && bool(a[2])) "0.00" else "#,##0.00")
+                    "COMBIN" -> { val nn = num(a[0]).toInt(); val k = num(a[1]).toInt(); if (k < 0 || k > nn) XlError("#NUM!") else (0 until k).fold(1.0) { acc, i -> acc * (nn - i) / (i + 1) } }
+                    "PERMUT" -> { val nn = num(a[0]).toInt(); val k = num(a[1]).toInt(); if (k < 0 || k > nn) XlError("#NUM!") else (0 until k).fold(1.0) { acc, i -> acc * (nn - i) } }
+                    "MROUND" -> { val m = num(a[1]); if (m == 0.0) 0.0 else Math.round(num(a[0]) / m) * m }
+                    "QUOTIENT" -> { val d = num(a[1]); if (d == 0.0) XlError("#DIV/0!") else (num(a[0]) / d).let { if (it < 0) Math.ceil(it) else floor(it) } }
+                    "LCM" -> numbers(a).map { it.toLong() }.reduce { x, y -> var p = x; var q = y; while (q != 0L) { val t = p % q; p = q; q = t }; x / p * y }.toDouble()
+                    "SQRTPI" -> sqrt(num(a[0]) * Math.PI)
+                    "DEC2BIN" -> java.lang.Long.toBinaryString(num(a[0]).toLong()); "DEC2HEX" -> java.lang.Long.toHexString(num(a[0]).toLong()).uppercase(); "DEC2OCT" -> java.lang.Long.toOctalString(num(a[0]).toLong())
+                    "BIN2DEC" -> str(a[0]).toLong(2).toDouble(); "HEX2DEC" -> str(a[0]).toLong(16).toDouble(); "OCT2DEC" -> str(a[0]).toLong(8).toDouble()
+                    "ROMAN" -> { var x = num(a[0]).toInt(); val sb = StringBuilder(); for ((v, sy) in listOf(1000 to "M", 900 to "CM", 500 to "D", 400 to "CD", 100 to "C", 90 to "XC", 50 to "L", 40 to "XL", 10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I")) while (x >= v) { sb.append(sy); x -= v }; sb.toString() }
+                    "TIME" -> (num(a[0]) * 3600 + num(a[1]) * 60 + num(a[2])) / 86400.0
+                    "WEEKNUM" -> java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()).get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR).toDouble()
+                    "ISOWEEKNUM" -> java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()).get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR).toDouble()
+                    "DAYS360" -> { val d1 = java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()); val d2 = java.time.LocalDate.ofEpochDay((num(a[1]) - 25569.0).toLong())
+                        ((d2.year - d1.year) * 360 + (d2.monthValue - d1.monthValue) * 30 + (minOf(d2.dayOfMonth, 30) - minOf(d1.dayOfMonth, 30))).toDouble() }
+                    "DATEDIF" -> { val d1 = java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()); val d2 = java.time.LocalDate.ofEpochDay((num(a[1]) - 25569.0).toLong())
+                        when (str(a[2]).uppercase()) { "D" -> java.time.temporal.ChronoUnit.DAYS.between(d1, d2).toDouble(); "M" -> java.time.temporal.ChronoUnit.MONTHS.between(d1, d2).toDouble()
+                            "Y" -> java.time.temporal.ChronoUnit.YEARS.between(d1, d2).toDouble(); else -> XlError("#NUM!") } }
+                    "NETWORKDAYS" -> { var d = java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()); val e = java.time.LocalDate.ofEpochDay((num(a[1]) - 25569.0).toLong()); var c = 0
+                        while (!d.isAfter(e)) { if (d.dayOfWeek.value < 6) c++; d = d.plusDays(1) }; c.toDouble() }
+                    "WORKDAY" -> { var d = java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()); var left = num(a[1]).toInt(); val step = if (left < 0) -1L else 1L; left = abs(left)
+                        while (left > 0) { d = d.plusDays(step); if (d.dayOfWeek.value < 6) left-- }; d.toEpochDay() + 25569.0 }
+                    "YEARFRAC" -> { val d1 = java.time.LocalDate.ofEpochDay((num(a[0]) - 25569.0).toLong()); val d2 = java.time.LocalDate.ofEpochDay((num(a[1]) - 25569.0).toLong())
+                        abs(((d2.year - d1.year) * 360 + (d2.monthValue - d1.monthValue) * 30 + (minOf(d2.dayOfMonth, 30) - minOf(d1.dayOfMonth, 30))) / 360.0) }
+                    "IFS" -> { var res: Any? = XlError("#N/A"); var i = 0; while (i + 1 < a.size) { if (bool(a[i])) { res = a[i + 1]; break }; i += 2 }; res }
+                    "SWITCH" -> { val key = scalar(a[0]); var res: Any? = if (a.size % 2 == 0) a.last() else XlError("#N/A"); var i = 1
+                        while (i + 1 < a.size) { if (compare("=", scalar(a[i]), key)) { res = a[i + 1]; break }; i += 2 }; res }
+                    "MAXIFS", "MINIFS" -> { val sumR = a[0] as? Range ?: return XlError("#VALUE!")
+                        val pairs = (1 until a.size step 2).map { (a[it] as? Range ?: return XlError("#VALUE!")) to criteria(a[it + 1]) }
+                        val v = sumR.cells.indices.filter { i -> pairs.all { (r, t) -> t(r.cells.getOrNull(i)) } }.mapNotNull { sumR.cells[it] as? Double }
+                        if (name == "MAXIFS") (v.maxOrNull() ?: 0.0) else (v.minOrNull() ?: 0.0) }
+                    "XLOOKUP" -> { val key = scalar(a[0]); val look = a[1] as? Range ?: return XlError("#VALUE!"); val ret = a[2] as? Range ?: return XlError("#VALUE!")
+                        val i = look.cells.indexOfFirst { it != null && key != null && (it is Double) == (key is Double) && compare("=", it, key) }
+                        if (i < 0) (if (a.size > 3) a[3] else XlError("#N/A")) else ret.cells.getOrNull(i) }
                     else -> XlError("#NAME?")
                 }
             } catch (e: IllegalStateException) { return XlError(e.message ?: "#VALUE!") }

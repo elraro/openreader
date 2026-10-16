@@ -40,6 +40,13 @@ class NewFeaturesTest {
         b.put("S", 13, 0, Workbook.Cell(null, "SUMPRODUCT(A1:A5,A1:A5)"))
         b.put("S", 14, 0, Workbook.Cell(null, "TEXTJOIN(\"-\",TRUE,C1:C3)"))
         b.put("S", 15, 0, Workbook.Cell(null, "FOO(1)"))
+        b.put("S", 16, 0, Workbook.Cell(null, "CORREL(A1:A5,A1:A5)"))
+        b.put("S", 17, 0, Workbook.Cell(null, "PERCENTILE(A1:A5,0.5)"))
+        b.put("S", 18, 0, Workbook.Cell(null, "IFS(A1>5,\"a\",A1>0,\"b\")"))
+        b.put("S", 19, 0, Workbook.Cell(null, "ROW()"))
+        b.put("S", 20, 0, Workbook.Cell(null, "DATEDIF(1,400,\"Y\")"))
+        assertEquals(1.0, b.eval("S", 16, 0)); assertEquals(3.0, b.eval("S", 17, 0)); assertEquals("b", b.eval("S", 18, 0))
+        assertEquals(20.0, b.eval("S", 19, 0)); assertEquals(1.0, b.eval("S", 20, 0))
         assertEquals(3.0, b.eval("S", 10, 0))
         assertEquals(4.0, b.eval("S", 11, 0))
         assertEquals(9.0, b.eval("S", 12, 0)) // rows 1,3,5 -> 1+3+5

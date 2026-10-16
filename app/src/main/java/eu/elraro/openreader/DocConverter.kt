@@ -48,7 +48,9 @@ object DocConverter {
     fun toHtml(cfb: Cfb, title: String): String {
         val wd = cfb.stream("WordDocument") ?: throw IllegalArgumentException("Missing WordDocument stream")
         val b = ByteBuffer.wrap(wd).order(ByteOrder.LITTLE_ENDIAN)
-        if (wd.size < 0x1AA || (b.getShort(0).toInt() and 0xFFFF) != 0xA5EC) throw IllegalArgumentException("Not a Word 97+ document")
+        val magic = b.getShort(0).toInt() and 0xFFFF
+        if (wd.size > 0x20 && magic == 0xA5DC) return word6(wd, title) // Word 6.0 / 95
+        if (wd.size < 0x1AA || magic != 0xA5EC) throw IllegalArgumentException("Not a Word 97+ document")
         val flags = b.getShort(0x0A).toInt()
         if (flags and 0x100 != 0) throw IllegalArgumentException("Encrypted documents are not supported")
         val tableBytes = cfb.stream(if (flags and 0x200 != 0) "1Table" else "0Table")
@@ -83,16 +85,14 @@ object DocConverter {
         val fnTxtCps = plcCps(tableBytes, fc(3), lcb(3), 0)
         val refMap = HashMap<Int, Int>().also { m -> fnRefCps.dropLast(1).forEachIndexed { i, cp -> m[cp] = i } }
         val txbxCps = plcCps(tableBytes, fc(56), lcb(56), 22)
-        var ctxRef: Ctx? = null
-        val floats = try {
+        val ctx = Ctx(wd, data, chpx, papx, styles, fonts, defaultFont, lists, lfos, refMap)
+        ctx.floats = try {
             buildFloats(wd, tableBytes, fc(40), lcb(40), fc(50), lcb(50), page) { idx ->
                 val a = txbxCps.getOrNull(idx); val e = txbxCps.getOrNull(idx + 1)
-                if (a == null || e == null || ctxRef == null) null
-                else renderRange(text, fcs, ctxRef!!, txbxStart + a, minOf(txbxStart + e, text.length), -1).joinToString("")
+                if (a == null || e == null) null
+                else renderRange(text, fcs, ctx, txbxStart + a, minOf(txbxStart + e, text.length), -1).joinToString("")
             }
         } catch (e: RuntimeException) { emptyMap() }
-        val ctx = Ctx(wd, data, chpx, papx, styles, fonts, defaultFont, lists, lfos, refMap, floats)
-        ctxRef = ctx
         val mainPages = renderRange(text, fcs, ctx, 0, minOf(ccpText, text.length), -1)
 
         // headers and footers of the first section: stories after the six footnote/endnote separators
@@ -139,6 +139,21 @@ td{vertical-align:top;border:1px solid #999;padding:2pt 4pt;white-space:pre-wrap
 
     private fun fmt(d: Double) = DocxConverter.fmt(d)
 
+    /** Word 6.0/95: the text is stored plainly between fcMin and fcMac; formatting isn't recovered. */
+    private fun word6(wd: ByteArray, title: String): String {
+        val b = ByteBuffer.wrap(wd).order(ByteOrder.LITTLE_ENDIAN)
+        if ((b.getShort(0x0A).toInt() and 0x100) != 0) throw IllegalArgumentException("Encrypted documents are not supported")
+        val from = b.getInt(0x18); val to = b.getInt(0x1C)
+        if (from < 0 || to > wd.size || to <= from) throw IllegalArgumentException("Bad Word 6 text range")
+        val text = String(wd, from, to - from, charset("windows-1252"))
+        val sb = StringBuilder()
+        for (para in text.split('\r')) {
+            val cleaned = para.filter { it >= ' ' || it == '\t' }
+            sb.append("<p>").append(if (cleaned.isBlank()) "&nbsp;" else esc(cleaned)).append("</p>")
+        }
+        return htmlPage(title, ".page{max-width:800px;margin:0 auto;padding:16px;font-family:'Times New Roman',serif}p{margin:0 0 .6em;white-space:pre-wrap}", "<div class=\"page\">$sb</div>")
+    }
+
     /** Font stack with a generic family guessed from the name, so unavailable fonts still look similar. */
     private fun fontCss(name: String): String {
         val n = name.replace("'", "")
@@ -156,7 +171,7 @@ td{vertical-align:top;border:1px solid #999;padding:2pt 4pt;white-space:pre-wrap
         val wd: ByteArray, val data: ByteArray?, val chpx: Ranges, val papx: Ranges, val styles: Map<Int, Style>,
         val fonts: List<String>, val defaultFont: String?,
         val lists: Map<Int, List<Lvl>> = emptyMap(), val lfos: List<Int> = emptyList(),
-        val footnoteRefs: Map<Int, Int> = emptyMap(), val floats: Map<Int, String> = emptyMap(),
+        val footnoteRefs: Map<Int, Int> = emptyMap(), var floats: Map<Int, String> = emptyMap(),
     ) {
         val counters = HashMap<Int, IntArray>()
     }
@@ -287,6 +302,7 @@ td{vertical-align:top;border:1px solid #999;padding:2pt 4pt;white-space:pre-wrap
                 val pg = page.toInt()
                 val crun = wd[pg + 511].toInt() and 0xFF
                 val f = ByteBuffer.wrap(wd, pg, 512).slice().order(ByteOrder.LITTLE_ENDIAN)
+                if ((crun + 1) * 4 + crun * (if (para) 13 else 1) > 511) continue
                 for (r in 0 until crun) {
                     val s = f.getInt(r * 4); val e = f.getInt((r + 1) * 4)
                     val off = if (para) (wd[pg + (crun + 1) * 4 + r * 13].toInt() and 0xFF) * 2 else (wd[pg + (crun + 1) * 4 + r].toInt() and 0xFF) * 2
