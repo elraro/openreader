@@ -157,10 +157,12 @@ class MainActivity : Activity() {
         worker.execute {
             val result = try {
                 Result.success(convert(uri, name))
-            } catch (e: OutOfMemoryError) {
-                Result.failure(UnsupportedFormat(getString(R.string.error_too_large)))
             } catch (e: Exception) {
                 Result.failure(e)
+            } catch (e: OutOfMemoryError) {
+                Result.failure(UnsupportedFormat(getString(R.string.error_too_large)))
+            } catch (e: StackOverflowError) {
+                Result.failure(UnsupportedFormat(getString(R.string.error_too_large)))
             }
             runOnUiThread {
                 result.onSuccess { html ->
