@@ -15,6 +15,16 @@ class LegacyTest {
         val html = DocConverter.toHtml(load("SampleDoc.doc"), "t")
         assertTrue(html, html.contains("I am a test document"))
         assertTrue(html.contains("It’s Arial Black in 16 point"))
+        // character formatting is recovered: the Arial Black run is 16 pt
+        assertTrue(Regex("font-family:'Arial Black'[^\"]*font-size:16pt[^\"]*\">It’s Arial Black").containsMatchIn(html))
+    }
+
+    @Test
+    fun docPictures() {
+        val html = DocConverter.toHtml(load("testPictures.doc"), "t")
+        assertTrue(html.contains("<img src=\"data:image/jpeg"))
+        assertTrue(html.contains("<img src=\"data:image/png"))
+        assertTrue(html.contains("<img src=\"data:image/svg+xml")) // the WMF, converted
     }
 
     @Test

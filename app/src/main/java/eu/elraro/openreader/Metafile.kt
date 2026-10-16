@@ -23,7 +23,7 @@ object Metafile {
     private fun n(v: Number) = String.format(java.util.Locale.US, "%.2f", v.toDouble()).trimEnd('0').trimEnd('.').ifEmpty { "0" }
 
     /** Wraps a DIB (BITMAPINFO + bits) into a BMP data URI. */
-    private fun dibUri(dib: ByteArray): String? {
+    fun dibUri(dib: ByteArray): String? {
         if (dib.size < 40) return null
         val hdr = ByteBuffer.wrap(dib).order(ByteOrder.LITTLE_ENDIAN)
         val hsize = hdr.getInt(0)
