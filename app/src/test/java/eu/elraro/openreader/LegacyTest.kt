@@ -51,4 +51,15 @@ class LegacyTest {
         assertTrue(tb.contains("font-weight:bold"))
         assertTrue(tb.contains("class=\"sh\""))
     }
+
+    @Test
+    fun docListsNotesHeaders() {
+        val lists = DocConverter.toHtml(load("Lists.doc"), "t")
+        assertTrue(lists.contains(">1.</span>") && lists.contains(">2.1.</span>")) // numbered list and nested numbering
+        val fn = DocConverter.toHtml(load("footnote.doc"), "t")
+        assertTrue(fn.contains("<sup>1</sup>") && fn.contains("TestFootnote"))
+        val hf = DocConverter.toHtml(load("HeaderFooterUnicode.doc"), "t")
+        assertTrue(hf.contains("This is a simple header") && hf.contains("Molière"))
+        assertTrue(DocConverter.toHtml(load("WithArtShapes.doc"), "t").contains("background:#"))
+    }
 }
