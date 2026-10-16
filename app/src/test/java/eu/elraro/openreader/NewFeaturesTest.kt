@@ -31,6 +31,23 @@ class NewFeaturesTest {
         assertTrue(b.eval("S", 5, 1) is XlError)
     }
 
+    @Test fun moreFunctions() {
+        val b = book()
+        for (r in 0..4) b.put("S", r, 2, Workbook.Cell(if (r % 2 == 0) "x" else "y", null))
+        b.put("S", 10, 0, Workbook.Cell(null, "MEDIAN(A1:A5)"))
+        b.put("S", 11, 0, Workbook.Cell(null, "INDEX(A1:A5,MATCH(4,A1:A5,0))"))
+        b.put("S", 12, 0, Workbook.Cell(null, "SUMIFS(A1:A5,C1:C5,\"x\")"))
+        b.put("S", 13, 0, Workbook.Cell(null, "SUMPRODUCT(A1:A5,A1:A5)"))
+        b.put("S", 14, 0, Workbook.Cell(null, "TEXTJOIN(\"-\",TRUE,C1:C3)"))
+        b.put("S", 15, 0, Workbook.Cell(null, "FOO(1)"))
+        assertEquals(3.0, b.eval("S", 10, 0))
+        assertEquals(4.0, b.eval("S", 11, 0))
+        assertEquals(9.0, b.eval("S", 12, 0)) // rows 1,3,5 -> 1+3+5
+        assertEquals(55.0, b.eval("S", 13, 0))
+        assertEquals("x-y-x", b.eval("S", 14, 0))
+        assertEquals("#NAME?", b.eval("S", 15, 0).toString())
+    }
+
     @Test fun chartSvg() {
         val xml = """<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/>
             <c:ser><c:tx><c:strRef><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Sales</c:v></c:pt></c:strCache></c:strRef></c:tx>
