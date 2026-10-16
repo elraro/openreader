@@ -47,6 +47,10 @@ class NewFeaturesTest {
         b.put("S", 20, 0, Workbook.Cell(null, "DATEDIF(1,400,\"Y\")"))
         assertEquals(1.0, b.eval("S", 16, 0)); assertEquals(3.0, b.eval("S", 17, 0)); assertEquals("b", b.eval("S", 18, 0))
         assertEquals(20.0, b.eval("S", 19, 0)); assertEquals(1.0, b.eval("S", 20, 0))
+        b.put("S", 21, 0, Workbook.Cell(null, "ROUND(IPMT(0.01,1,12,1000),2)"))
+        b.put("S", 22, 0, Workbook.Cell(null, "ROUND(NORM.S.INV(0.975),2)"))
+        b.put("S", 23, 0, Workbook.Cell(null, "ROUND(T.DIST.2T(2.228,10),3)"))
+        assertEquals(-10.0, b.eval("S", 21, 0)); assertEquals(1.96, b.eval("S", 22, 0)); assertEquals(0.05, b.eval("S", 23, 0))
         assertEquals(3.0, b.eval("S", 10, 0))
         assertEquals(4.0, b.eval("S", 11, 0))
         assertEquals(9.0, b.eval("S", 12, 0)) // rows 1,3,5 -> 1+3+5

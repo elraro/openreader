@@ -544,6 +544,58 @@ class Workbook {
                         fun pmf(i: Int) = (0 until i).fold(1.0) { acc, j -> acc * (nn - j) / (j + 1) } * p.pow(i) * (1 - p).pow(nn - i)
                         if (bool(a[3])) (0..k).sumOf { pmf(it) } else pmf(k) }
                     "EXPON.DIST", "EXPONDIST" -> { val x = num(a[0]); val l = num(a[1]); if (bool(a[2])) 1 - Math.exp(-l * x) else l * Math.exp(-l * x) }
+
+                    "IPMT", "PPMT" -> { val r = num(a[0]); val per = num(a[1]).toInt(); val nper = num(a[2]); val pv = num(a[3]); val fv = if (a.size > 4) num(a[4]) else 0.0
+                        val pmt = if (r == 0.0) -(pv + fv) / nper else -(r * (pv * (1 + r).pow(nper) + fv)) / ((1 + r).pow(nper) - 1)
+                        var b0 = pv; for (k in 1 until per) b0 = b0 * (1 + r) + pmt
+                        val ip = -b0 * r
+                        if (name == "IPMT") ip else pmt - ip }
+                    "EFFECT" -> (1 + num(a[0]) / num(a[1])).pow(num(a[1])) - 1
+                    "NOMINAL" -> num(a[1]) * ((1 + num(a[0])).pow(1 / num(a[1])) - 1)
+                    "DB", "DDB", "SYD" -> { val cost = num(a[0]); val salvage = num(a[1]); val life = num(a[2]); val per = num(a[3])
+                        when (name) {
+                            "SYD" -> (cost - salvage) * (life - per + 1) * 2 / (life * (life + 1))
+                            "DDB" -> { val f = if (a.size > 4) num(a[4]) else 2.0; var book = cost; var dep = 0.0
+                                for (k in 1..per.toInt()) { dep = minOf(book * f / life, maxOf(0.0, book - salvage)); book -= dep }; dep }
+                            else -> { val rate = Math.round((1 - (salvage / cost).pow(1 / life)) * 1000) / 1000.0; var book = cost; var dep = 0.0
+                                for (k in 1..per.toInt()) { dep = book * rate; book -= dep }; dep } } }
+                    "XNPV" -> { val r = num(a[0]); val v = numbers(listOf(a[1])); val d = numbers(listOf(a[2])); if (v.size != d.size || d.isEmpty()) XlError("#VALUE!") else v.indices.sumOf { v[it] / (1 + r).pow((d[it] - d[0]) / 365.0) } }
+                    "MIRR" -> { val v = numbers(listOf(a[0])); val fr = num(a[1]); val rr = num(a[2]); val n0 = v.size
+                        val pos = v.withIndex().sumOf { (i, c) -> if (c > 0) c * (1 + rr).pow(n0 - 1 - i) else 0.0 }
+                        val neg = v.withIndex().sumOf { (i, c) -> if (c < 0) c / (1 + fr).pow(i) else 0.0 }
+                        if (neg == 0.0 || pos == 0.0) XlError("#DIV/0!") else (pos / -neg).pow(1.0 / (n0 - 1)) - 1 }
+                    "T.DIST.2T", "TDIST" -> { val x = abs(num(a[0])); val df = num(a[1]); val xx = df / (df + x * x); 
+                        // regularized incomplete beta via continued fraction
+                        fun betacf(aa: Double, bb: Double, xv: Double): Double { var c = 1.0; var d = 1 - (aa + bb) * xv / (aa + 1); if (abs(d) < 1e-30) d = 1e-30; d = 1 / d; var h = d
+                            for (m in 1..200) { val m2 = 2 * m; var aaa = m * (bb - m) * xv / ((aa + m2 - 1) * (aa + m2)); d = 1 + aaa * d; if (abs(d) < 1e-30) d = 1e-30; c = 1 + aaa / c; if (abs(c) < 1e-30) c = 1e-30; d = 1 / d; h *= d * c
+                                aaa = -(aa + m) * (aa + bb + m) * xv / ((aa + m2) * (aa + m2 + 1)); d = 1 + aaa * d; if (abs(d) < 1e-30) d = 1e-30; c = 1 + aaa / c; if (abs(c) < 1e-30) c = 1e-30; d = 1 / d; val del = d * c; h *= del; if (abs(del - 1) < 3e-7) break }
+                            return h }
+                        fun lgamma(z: Double): Double { val cof = doubleArrayOf(76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5)
+                            var y = z; val tmp = z + 5.5 - (z + 0.5) * Math.log(z + 5.5); var ser = 1.000000000190015; for (cc in cof) { y += 1; ser += cc / y }; return -tmp + Math.log(2.5066282746310005 * ser / z) }
+                        val aa = df / 2; val bb = 0.5
+                        val bt = Math.exp(lgamma(aa + bb) - lgamma(aa) - lgamma(bb) + aa * Math.log(xx) + bb * Math.log(1 - xx))
+                        if (xx < (aa + 1) / (aa + bb + 2)) bt * betacf(aa, bb, xx) / aa else 1 - bt * betacf(bb, aa, 1 - xx) / bb }
+                    "CONFIDENCE.NORM", "CONFIDENCE" -> num(a[1]) * -normInv(num(a[0]) / 2) / sqrt(num(a[2]))
+                    "STANDARDIZE" -> (num(a[0]) - num(a[1])) / num(a[2])
+                    "SKEW" -> numbers(a).let { v -> val m = v.average(); val sd = sqrt(v.sumOf { (it - m) * (it - m) } / (v.size - 1)); v.size.toDouble() / ((v.size - 1) * (v.size - 2)) * v.sumOf { ((it - m) / sd).pow(3) } }
+                    "KURT" -> numbers(a).let { v -> val nn = v.size.toDouble(); val m = v.average(); val sd = sqrt(v.sumOf { (it - m) * (it - m) } / (nn - 1))
+                        nn * (nn + 1) / ((nn - 1) * (nn - 2) * (nn - 3)) * v.sumOf { ((it - m) / sd).pow(4) } - 3 * (nn - 1) * (nn - 1) / ((nn - 2) * (nn - 3)) }
+                    "TRIMMEAN" -> numbers(listOf(a[0])).sorted().let { v -> val k = (v.size * num(a[1]) / 2).toInt(); v.subList(k, v.size - k).average() }
+                    "FISHER" -> 0.5 * Math.log((1 + num(a[0])) / (1 - num(a[0])))
+                    "GAMMALN" -> { val z = num(a[0]); val cof = doubleArrayOf(76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5)
+                        var y = z; val tmp = z + 5.5 - (z + 0.5) * Math.log(z + 5.5); var ser = 1.000000000190015; for (cc in cof) { y += 1; ser += cc / y }; -tmp + Math.log(2.5066282746310005 * ser / z) }
+                    "SINH" -> Math.sinh(num(a[0])); "COSH" -> Math.cosh(num(a[0])); "TANH" -> Math.tanh(num(a[0]))
+                    "ASINH" -> num(a[0]).let { Math.log(it + sqrt(it * it + 1)) }; "ACOSH" -> num(a[0]).let { Math.log(it + sqrt(it * it - 1)) }; "ATANH" -> num(a[0]).let { 0.5 * Math.log((1 + it) / (1 - it)) }
+                    "COT" -> 1 / Math.tan(num(a[0])); "SEC" -> 1 / Math.cos(num(a[0])); "CSC" -> 1 / Math.sin(num(a[0]))
+                    "ERF" -> erf(num(a[0])); "ERFC" -> 1 - erf(num(a[0]))
+                    "MULTINOMIAL" -> numbers(a).let { v -> val tot = v.sum(); (1..tot.toInt()).fold(1.0) { x, y -> x * y } / v.fold(1.0) { x, c -> x * (1..c.toInt()).fold(1.0) { p, q -> p * q } } }
+                    "UNICODE" -> str(a[0]).firstOrNull()?.code?.toDouble() ?: XlError("#VALUE!")
+                    "UNICHAR" -> String(Character.toChars(num(a[0]).toInt()))
+                    "LEFTB", "RIGHTB", "MIDB", "LENB" -> call(name.removeSuffix("B"), a)
+                    "ISFORMULA" -> false
+                    "SHEET" -> 1.0
+                    "SHEETS" -> wb.sheets.size.toDouble()
+                    "ENCODEURL" -> java.net.URLEncoder.encode(str(a[0]), "UTF-8")
                     else -> XlError("#NAME?")
                 }
             } catch (e: IllegalStateException) { return XlError(e.message ?: "#VALUE!") }
