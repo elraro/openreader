@@ -596,6 +596,16 @@ class Workbook {
                     "SHEET" -> 1.0
                     "SHEETS" -> wb.sheets.size.toDouble()
                     "ENCODEURL" -> java.net.URLEncoder.encode(str(a[0]), "UTF-8")
+
+                    "RATE" -> { val nper = num(a[0]); val pmt = num(a[1]); val pv = num(a[2]); val fv = if (a.size > 3) num(a[3]) else 0.0; var r = if (a.size > 5) num(a[5]) else 0.1; var ok = false
+                        for (it in 0 until 100) { val f = pv * (1 + r).pow(nper) + pmt * ((1 + r).pow(nper) - 1) / r + fv
+                            val h = 1e-7; val f2 = pv * (1 + r + h).pow(nper) + pmt * ((1 + r + h).pow(nper) - 1) / (r + h) + fv
+                            val d = (f2 - f) / h; if (abs(f) < 1e-9) { ok = true; break }; if (d == 0.0 || d.isNaN()) break; r -= f / d }
+                        if (ok) r else XlError("#NUM!") }
+                    "HYPERLINK" -> if (a.size > 1) a[1] else a[0]
+                    "CEILING.PRECISE", "ISO.CEILING" -> call("CEILING.MATH", a)
+                    "STDEVA", "VARA" -> call(if (name == "STDEVA") "STDEV" else "VAR", flat(a).filter { it != null }.map { if (it is Double) it else if (it is Boolean) (if (it) 1.0 else 0.0) else 0.0 })
+                    "COUNTUNIQUE" -> flat(a).filter { it != null }.toSet().size.toDouble()
                     else -> XlError("#NAME?")
                 }
             } catch (e: IllegalStateException) { return XlError(e.message ?: "#VALUE!") }
