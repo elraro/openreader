@@ -13,6 +13,9 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -45,7 +48,31 @@ class MainActivity : Activity() {
             settings.displayZoomControls = false
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+            settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+            settings.textZoom = 100
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    val url = request.url.toString()
+                    if (!url.startsWith(Fonts.BASE_URL + "fonts/")) return null
+                    return try {
+                        val name = url.removePrefix(Fonts.BASE_URL + "fonts/").substringBefore('?')
+                        if (!name.matches(Regex("[A-Za-z]+-[A-Za-z]+\\.ttf"))) return null
+                        WebResourceResponse("font/ttf", null, assets.open("fonts/$name")).apply {
+                            responseHeaders = mapOf("Access-Control-Allow-Origin" to "*")
+                        }
+                    } catch (e: java.io.IOException) {
+                        null
+                    }
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val uri = request.url
+                    if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "mailto") {
+                        try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
+                    }
+                    return true // never navigate inside the viewer
+                }
+
                 override fun onPageFinished(view: WebView, url: String?) {
                     pageLoaded = true
                     spinner.visibility = View.GONE
@@ -135,7 +162,7 @@ class MainActivity : Activity() {
                     title = name
                     empty.visibility = View.GONE
                     web.visibility = View.VISIBLE
-                    web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                    web.loadDataWithBaseURL(Fonts.BASE_URL, html, "text/html", "utf-8", null)
                 }.onFailure { e ->
                     spinner.visibility = View.GONE
                     val msg = if (e is UnsupportedFormat) e.message else getString(R.string.error_read, e.message ?: e.javaClass.simpleName)

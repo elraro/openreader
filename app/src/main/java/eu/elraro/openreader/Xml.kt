@@ -82,6 +82,19 @@ class OoxmlPackage(file: File) : AutoCloseable {
         return out
     }
 
+    /** Relationship id -> target for external links (hyperlinks). */
+    fun externalRels(part: String): Map<String, String> {
+        val dir = part.substringBeforeLast('/', "")
+        val relsPath = (if (dir.isEmpty()) "" else "$dir/") + "_rels/" + part.substringAfterLast('/') + ".rels"
+        val root = xml(relsPath) ?: return emptyMap()
+        val out = HashMap<String, String>()
+        for (r in root.all("Relationship")) {
+            if (r.attr("TargetMode") != "External") continue
+            out[r.attr("Id") ?: continue] = r.attr("Target") ?: continue
+        }
+        return out
+    }
+
     /** Returns a data: URI for an image part, or null if unsupported/too large. */
     fun imageDataUri(part: String): String? {
         val ext = part.substringAfterLast('.').lowercase()
@@ -133,11 +146,12 @@ fun esc(s: String): String {
 private val HEX = Regex("^[0-9A-Fa-f]{6}$")
 fun safeColor(v: String?): String? = v?.takeIf { HEX.matches(it) }?.let { "#$it" }
 
-fun htmlPage(title: String, css: String, body: String) = """<!DOCTYPE html>
+fun htmlPage(title: String, css: String, body: String, viewport: String = "width=device-width, initial-scale=1") = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="$viewport">
 <title>${esc(title)}</title>
 <style>
+${Fonts.fontFaceCss}
 body{font-family:sans-serif;margin:0;color:#222;background:#fff;word-wrap:break-word}
 img{max-width:100%;height:auto}
 $css

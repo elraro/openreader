@@ -31,9 +31,9 @@ class ConvertersTest {
             </w:body></w:document>""",
         )
         val html = DocxConverter.toHtml(pkg, "t")
-        assertTrue(html, html.contains("<h1>Hi &lt;there&gt;</h1>"))
-        assertTrue(html.contains("<b>bold</b>"))
-        assertTrue(html.contains("<td><p>cell</p></td>"))
+        assertTrue(html, html.contains(">Hi &lt;there&gt;</div>"))
+        assertTrue(html.contains("font-weight:bold;\">bold</span>"))
+        assertTrue(html.contains(">cell</div></td>"))
     }
 
     @Test
