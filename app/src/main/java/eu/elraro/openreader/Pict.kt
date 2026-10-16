@@ -64,7 +64,7 @@ object Pict {
         if (w <= 0 || h <= 0 || w > 8000 || h > 8000) return null
         var pixelSize = 1; var cmpCount = 1; var packType = 0
         if (isPix) {
-            packType = u16(d, p + 2); pixelSize = u16(d, p + 20); cmpCount = u16(d, p + 22); p += 36
+            packType = u16(d, p + 2); pixelSize = u16(d, p + 18); cmpCount = u16(d, p + 20); p += 36
         }
         val palette = ArrayList<Int>()
         if (!direct) {
