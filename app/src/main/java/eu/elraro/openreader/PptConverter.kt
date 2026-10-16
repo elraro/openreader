@@ -16,7 +16,7 @@ object PptConverter {
     private const val TEXT_HEADER = 3999; private const val TEXT_CHARS = 4000; private const val TEXT_BYTES = 4008
     private const val STYLE_TEXT_PROP = 4001; private const val TEXT_MASTER_STYLE = 4003; private const val COLOR_SCHEME = 2032
     private const val OE_PLACEHOLDER = 3011; private const val OUTLINE_TEXT_REF = 3998
-    private const val USER_EDIT = 4085; private const val PERSIST_DIR = 6002
+    private const val NOTES = 1008; private const val USER_EDIT = 4085; private const val PERSIST_DIR = 6002
 
     private class Rec(val inst: Int, val ver: Int, val type: Int, val len: Int, val body: Int) { val end get() = body + len }
 
@@ -128,22 +128,24 @@ object PptConverter {
         val ctx = Ctx(s, b, cfb.stream("Pictures"), fonts, bse, s)
         if (slides.isEmpty()) throw IllegalStateException("no slides")
 
-        // text of placeholder shapes lives in the slide list, in slide order
+        // text of placeholder shapes lives in the slide list, in slide order; the notes list is keyed by notes slide id
         val slideTexts = ArrayList<List<TextBlock>>()
-        run {
+        val notesBySid = HashMap<Int, List<TextBlock>>()
+        val notesPersist = HashMap<Int, Int>()
+        for (r in children(b, doc.body, doc.end)) if (r.type == SLIDE_LIST && (r.inst == 0 || r.inst == 2)) {
+            var type = 1
             var cur: ArrayList<TextBlock>? = null
-            for (r in children(b, doc.body, doc.end)) if (r.type == SLIDE_LIST && r.inst == 0) {
-                var type = 1; var text: String? = null; var tt = 1
-                fun flush() { text?.let { cur?.add(TextBlock(tt, it, null)) }; text = null }
-                var pendingStyle: ByteArray? = null
-                var lastIdx = -1
-                for (c in children(b, r.body, r.end)) when (c.type) {
-                    SLIDE_PERSIST -> { cur = ArrayList<TextBlock>().also { slideTexts.add(it) }; lastIdx = -1 }
-                    TEXT_HEADER -> type = b.getInt(c.body)
-                    TEXT_CHARS -> { cur?.add(TextBlock(type, String(s, c.body, c.len / 2 * 2, Charsets.UTF_16LE), null)); lastIdx = (cur?.size ?: 0) - 1 }
-                    TEXT_BYTES -> { cur?.add(TextBlock(type, String(s, c.body, c.len, charset("windows-1252")), null)); lastIdx = (cur?.size ?: 0) - 1 }
-                    STYLE_TEXT_PROP -> if (lastIdx >= 0) cur?.let { it[lastIdx] = TextBlock(it[lastIdx].type, it[lastIdx].text, s.copyOfRange(c.body, c.end)) }
+            var lastIdx = -1
+            for (c in children(b, r.body, r.end)) when (c.type) {
+                SLIDE_PERSIST -> {
+                    cur = ArrayList()
+                    if (r.inst == 0) slideTexts.add(cur) else if (c.len >= 16) { notesBySid[b.getInt(c.body + 12)] = cur; notesPersist[b.getInt(c.body + 12)] = b.getInt(c.body) }
+                    lastIdx = -1
                 }
+                TEXT_HEADER -> type = b.getInt(c.body)
+                TEXT_CHARS -> { cur?.add(TextBlock(type, String(s, c.body, c.len / 2 * 2, Charsets.UTF_16LE), null)); lastIdx = (cur?.size ?: 0) - 1 }
+                TEXT_BYTES -> { cur?.add(TextBlock(type, String(s, c.body, c.len, charset("windows-1252")), null)); lastIdx = (cur?.size ?: 0) - 1 }
+                STYLE_TEXT_PROP -> if (lastIdx >= 0) cur?.let { it[lastIdx] = TextBlock(it[lastIdx].type, it[lastIdx].text, s.copyOfRange(c.body, c.end)) }
             }
         }
 
@@ -161,7 +163,9 @@ object PptConverter {
             if (u16(b, off + 2) != SLIDE) return@forEachIndexed
             val slide = page(pid) ?: return@forEachIndexed
             val slideRec = Rec(0, 0xF, SLIDE, b.getInt(off + 4), off + 8)
-            val masterSid = children(b, slideRec.body, slideRec.end).firstOrNull { it.type == SLIDE_ATOM }?.let { if (it.len >= 16) b.getInt(it.body + 12) else null }
+            val slideAtom = children(b, slideRec.body, slideRec.end).firstOrNull { it.type == SLIDE_ATOM }
+            val masterSid = slideAtom?.let { if (it.len >= 16) b.getInt(it.body + 12) else null }
+            val notesSid = slideAtom?.let { if (it.len >= 20) b.getInt(it.body + 16) else null }
             val master = page(masters[masterSid])
             val scheme = slide.scheme ?: master?.scheme
             body.append("<div class=\"num\">Slide ${i + 1}</div>")
@@ -174,6 +178,17 @@ object PptConverter {
                 shape(sh0, m, ctx, scheme, levels, body)
             }
             body.append("</div>")
+            var notes = notesSid?.let { notesBySid[it] }?.filter { it.type == 2 }?.joinToString(" ") { it.text.replace('\r', ' ').replace('\u000b', ' ') }?.trim()
+            if (notes.isNullOrEmpty()) {
+                // notes written as text boxes of the notes page itself
+                val noff = notesSid?.let { notesPersist[it] }?.let { persist[it] }
+                if (noff != null && u16(b, noff + 2) == NOTES) {
+                    val nrec = Rec(0, 0xF, NOTES, b.getInt(noff + 4), noff + 8)
+                    notes = readPage(ctx, nrec, emptyList()).shapes.filter { true }
+                        .flatMap { it.blocks }.filter { it.type == 2 && it.text.any { c -> c.isLetterOrDigit() } }.joinToString(" ") { it.text.replace('\r', ' ').replace('\u000b', ' ') }.trim()
+                }
+            }
+            if (!notes.isNullOrEmpty()) body.append("<div class=\"notes\"><b>Notes:</b> ${esc(notes)}</div>")
         }
         val zoom = f(minOf(1.0, 780.0 / wPx))
         val css = """
@@ -182,10 +197,25 @@ body{background:#d9d9d9;padding:8px 0}
 .slide{position:relative;margin:0 auto 6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.4);page-break-inside:avoid;white-space:normal;font-family:'Arial',sans-serif}
 .sh{position:absolute;box-sizing:border-box;display:flex;flex-direction:column}
 .sh div.pp{white-space:pre-wrap;overflow-wrap:break-word}
-@media print{body{background:#fff;padding:0}.slide{box-shadow:none;margin:0 0 8px 0;zoom:$zoom}.num{page-break-before:always;zoom:$zoom}}
+.notes{font-size:12px;color:#444;margin:0 auto 10px;width:${f(wPx)}px;background:#fffbe6;padding:4px;box-sizing:border-box}
+@media print{body{background:#fff;padding:0}.notes{zoom:$zoom}.slide{box-shadow:none;margin:0 0 8px 0;zoom:$zoom}.num{page-break-before:always;zoom:$zoom}}
 """
         return htmlPage(title, css, body.toString(), "width=${Math.round(wPx) + 16}")
     }
+
+    /** Outlines (percent coordinates) of common auto shapes, keyed by MSOSPT shape type. */
+    private val POLYGONS = mapOf(
+        4 to "50% 0,100% 50%,50% 100%,0 50%", 5 to "50% 0,100% 100%,0 100%", 6 to "0 0,100% 100%,0 100%",
+        7 to "25% 0,100% 0,75% 100%,0 100%", 8 to "20% 0,80% 0,100% 100%,0 100%",
+        9 to "25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%",
+        10 to "29% 0,71% 0,100% 29%,100% 71%,71% 100%,29% 100%,0 71%,0 29%",
+        11 to "33% 0,67% 0,67% 33%,100% 33%,100% 67%,67% 67%,67% 100%,33% 100%,33% 67%,0 67%,0 33%,33% 33%",
+        12 to "50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%",
+        13 to "0 25%,60% 25%,60% 0,100% 50%,60% 100%,60% 75%,0 75%", 15 to "0 0,75% 0,100% 50%,75% 100%,0 100%",
+        56 to "50% 0,100% 38%,81% 100%,19% 100%,0 38%", 66 to "100% 25%,40% 25%,40% 0,0 50%,40% 100%,40% 75%,100% 75%",
+        67 to "25% 0,75% 0,75% 60%,100% 60%,50% 100%,0 60%,25% 60%", 68 to "50% 0,100% 40%,75% 40%,75% 100%,25% 100%,25% 40%,0 40%",
+        69 to "0 50%,25% 0,25% 30%,75% 30%,75% 0,100% 50%,75% 100%,75% 70%,25% 70%,25% 100%",
+    )
 
     private fun masterFor(master: Page?, ph: Int): Shape? {
         master ?: return null
@@ -417,6 +447,7 @@ body{background:#d9d9d9;padding:8px 0}
             val lc = opt[0x01C0]?.let { color(it, scheme) } ?: "#000000"
             css.append("border:${f(maxOf(1.0, (opt[0x01CB] ?: 9525) / 9525.0))}px solid $lc;")
         }
+        POLYGONS[sh.kind]?.let { css.append("clip-path:polygon($it);") }
         when (sh.kind) { 3 -> css.append("border-radius:50%;"); 2 -> css.append("border-radius:${f(minOf(w, h) * 0.17)}px;") }
         val ml = (opt[0x0081] ?: 91440) / 9525.0; val mt = (opt[0x0082] ?: 45720) / 9525.0
         val mr = (opt[0x0083] ?: 91440) / 9525.0; val mb = (opt[0x0084] ?: 45720) / 9525.0
