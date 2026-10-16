@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         val root = FrameLayout(this)
 
         web = WebView(this).apply {
-            settings.javaScriptEnabled = false
+            settings.javaScriptEnabled = true // only the pagination script (nonce-protected by the page's CSP) runs
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.setSupportZoom(true)
@@ -71,8 +71,6 @@ class MainActivity : Activity() {
             settings.loadWithOverviewMode = true
             settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
             settings.textZoom = 100
-            if (Prefs.isDark(this@MainActivity) && Prefs.darkDocuments(this@MainActivity) &&
-                android.os.Build.VERSION.SDK_INT >= 29) settings.forceDark = WebSettings.FORCE_DARK_ON
             setBackgroundColor(if (Prefs.isDark(this@MainActivity)) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
@@ -198,7 +196,7 @@ class MainActivity : Activity() {
                     title = name
                     empty.visibility = View.GONE
                     web.visibility = View.VISIBLE
-                    web.loadDataWithBaseURL(Fonts.BASE_URL, html, "text/html", "utf-8", null)
+                    web.loadDataWithBaseURL(Fonts.BASE_URL, darken(html), "text/html", "utf-8", null)
                 }.onFailure { e ->
                     spinner.visibility = View.GONE
                     val msg = if (e is UnsupportedFormat) e.message else getString(R.string.error_read, e.message ?: e.javaClass.simpleName)
@@ -206,6 +204,13 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** Dark mode for documents: invert the page and turn pictures back, never for printing. */
+    private fun darken(html: String): String {
+        if (!(Prefs.isDark(this) && Prefs.darkDocuments(this))) return html
+        val css = "html{filter:invert(1) hue-rotate(180deg)}img,svg{filter:invert(1) hue-rotate(180deg)}@media print{html,img,svg{filter:none}}"
+        return html.replaceFirst("</style>", "$css</style>")
     }
 
     private class UnsupportedFormat(msg: String) : Exception(msg)

@@ -72,7 +72,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
 @media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;width:auto;min-height:0;page-break-after:always}.page:last-child{page-break-after:auto}}
 """
         val viewport = "width=${Math.round(page.w * 4 / 3) + 16}"
-        return htmlPage(title, css, pages.toString(), viewport)
+        return htmlPage(title, css, pages.toString(), viewport, Paginate.JS)
     }
 
     private fun pt(d: Double) = fmt(d)
@@ -427,7 +427,29 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
 
         private fun runs(parent: Node, out: StringBuilder, base: RunProps) {
             for (n in parent.children) when (n.name) {
-                "r" -> run(n, out, base)
+                "r" -> {
+                    val fc = n.child("fldChar")?.attr("fldCharType")
+                    val instrText = n.child("instrText")
+                    when {
+                        fc == "begin" -> fieldInstr = StringBuilder()
+                        instrText != null -> fieldInstr?.append(instrText.text)
+                        fc == "separate" -> {
+                            val i = fieldInstr?.toString()?.trim()?.uppercase().orEmpty()
+                            fieldInstr = null
+                            fieldClose = when { i.startsWith("PAGE") -> "fpg"; i.startsWith("NUMPAGES") -> "fnp"; else -> null }
+                            fieldClose?.let { out.append("<span class=\"$it\">") }
+                        }
+                        fc == "end" -> { if (fieldClose != null) out.append("</span>"); fieldClose = null; fieldInstr = null }
+                        fieldInstr == null -> run(n, out, base)
+                    }
+                }
+                "fldSimple" -> {
+                    val i = n.attr("instr")?.trim()?.uppercase().orEmpty()
+                    val cls = when { i.startsWith("PAGE") -> "fpg"; i.startsWith("NUMPAGES") -> "fnp"; else -> null }
+                    if (cls != null) out.append("<span class=\"$cls\">")
+                    runs(n, out, base)
+                    if (cls != null) out.append("</span>")
+                }
                 "hyperlink" -> {
                     val href = n.attr("id")?.let { ext[it] }?.takeIf { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("mailto:") }
                     if (href != null) {
@@ -436,7 +458,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
                         out.append("</a>")
                     } else runs(n, out, base)
                 }
-                "smartTag", "sdt", "sdtContent", "fldSimple", "customXml" -> runs(n, out, base)
+                "smartTag", "sdt", "sdtContent", "customXml" -> runs(n, out, base)
                 "ins", "moveTo", "del", "moveFrom" -> {
                     // tracked changes are shown like Word's "All Markup": insertions underlined, deletions struck through
                     val saved = revision
@@ -448,6 +470,8 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
         }
 
         private var revision: String? = null
+        private var fieldInstr: StringBuilder? = null
+        private var fieldClose: String? = null
 
         private fun run(r: Node, out: StringBuilder, base: RunProps) {
             val rPr = r.child("rPr")

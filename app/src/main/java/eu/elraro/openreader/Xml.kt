@@ -147,8 +147,13 @@ fun esc(s: String): String {
 private val HEX = Regex("^[0-9A-Fa-f]{6}$")
 fun safeColor(v: String?): String? = v?.takeIf { HEX.matches(it) }?.let { "#$it" }
 
-fun htmlPage(title: String, css: String, body: String, viewport: String = "width=device-width, initial-scale=1") = """<!DOCTYPE html>
+/** [script] is the only code allowed to run: the CSP admits just scripts carrying this page's random nonce. */
+fun htmlPage(title: String, css: String, body: String, viewport: String = "width=device-width, initial-scale=1", script: String? = null): String {
+    val nonce = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+    val csp = if (script != null) "script-src 'nonce-$nonce'; object-src 'none'" else "script-src 'none'; object-src 'none'"
+    return """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="$csp">
 <meta name="viewport" content="$viewport">
 <title>${esc(title)}</title>
 <style>
@@ -156,4 +161,5 @@ ${Fonts.fontFaceCss}
 body{font-family:sans-serif;margin:0;color:#222;background:#fff;word-wrap:break-word}
 img{max-width:100%;height:auto}
 $css
-</style></head><body>$body</body></html>"""
+</style></head><body>$body${if (script != null) "<script nonce=\"$nonce\">$script</script>" else ""}</body></html>"""
+}
