@@ -37,6 +37,14 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
 
     private var currentUri: Uri? = null
+    private var appliedSettings = ""
+
+    private fun settingsSignature() = "${Prefs.theme(this)}|${Prefs.language(this)}|${Prefs.darkDocuments(this)}"
+
+    override fun onResume() {
+        super.onResume()
+        if (appliedSettings.isNotEmpty() && appliedSettings != settingsSignature()) recreate()
+    }
 
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(Prefs.wrap(newBase))
 
@@ -49,6 +57,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(Prefs.themeRes(this))
         super.onCreate(savedInstanceState)
+        appliedSettings = settingsSignature()
         val root = FrameLayout(this)
 
         web = WebView(this).apply {
@@ -165,7 +174,6 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_OPEN && resultCode == RESULT_OK) data?.data?.let { openUri(it) }
-        if (requestCode == REQ_SETTINGS && resultCode == RESULT_OK) recreate()
     }
 
     private fun openUri(uri: Uri) {
