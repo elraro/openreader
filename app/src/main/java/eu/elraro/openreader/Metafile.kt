@@ -79,6 +79,7 @@ object Metafile {
         var winX = 0.0; var winY = 0.0; var winW = 0.0; var winH = 0.0
         var textAlign = 0
         var count = 0
+        var plusImage: String? = null
         var vpX = 0.0; var vpY = 0.0; var vpW = 0.0; var vpH = 0.0
         var world = doubleArrayOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
@@ -112,6 +113,7 @@ object Metafile {
                 if (++count > 200_000) break
             }
             if (bw <= 0 || bh <= 0) return null
+            if (body.isEmpty() && plusImage != null) body.append("<image href=\"$plusImage\" x=\"${n(bx)}\" y=\"${n(by)}\" width=\"${n(bw)}\" height=\"${n(bh)}\" preserveAspectRatio=\"none\"/>")
             return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"${n(bx)} ${n(by)} ${n(bw)} ${n(bh)}\" width=\"${n(bw)}\" height=\"${n(bh)}\">$body</svg>"
         }
 
@@ -126,8 +128,33 @@ object Metafile {
             }
         }
 
+        /** EMF+ object records can carry a PNG/JPEG/GIF; used for files that only hold such an image. */
+        fun emfPlus(p: Int, size: Int) {
+            if (plusImage != null || size < 20 || i(p + 12) != 0x2B464D45) return
+            var q = p + 16; val end = p + size
+            while (q + 12 <= end) {
+                val t = s16(q) and 0xFFFF; val flags = s16(q + 2) and 0xFFFF; val sz = i(q + 4); val ds = i(q + 8)
+                if (sz < 12 || q + sz > end) break
+                if (t == 0x4008 && (flags shr 8) and 0x7F == 5 && ds > 28 && q + 12 + ds <= end) {
+                    val o = q + 12
+                    if (i(o + 4) == 1 && i(o + 24) == 1) { // bitmap holding compressed data
+                        val data = d.copyOfRange(o + 28, q + 12 + ds)
+                        val mime = when {
+                            data.size > 4 && data[0] == 0x89.toByte() && data[1] == 'P'.code.toByte() -> "image/png"
+                            data.size > 3 && data[0] == 0xFF.toByte() && data[1] == 0xD8.toByte() -> "image/jpeg"
+                            data.size > 3 && data[0] == 'G'.code.toByte() && data[1] == 'I'.code.toByte() -> "image/gif"
+                            else -> null
+                        }
+                        if (mime != null) { plusImage = "data:$mime;base64," + Base64.encodeToString(data, Base64.NO_WRAP); return }
+                    }
+                }
+                q += sz
+            }
+        }
+
         fun record(type: Int, p: Int, size: Int) {
             when (type) {
+                70 -> emfPlus(p, size)
                 9 -> { winW = i(p + 8).toDouble(); winH = i(p + 12).toDouble() }
                 10 -> { winX = i(p + 8).toDouble(); winY = i(p + 12).toDouble() }
                 11 -> { vpW = i(p + 8).toDouble(); vpH = i(p + 12).toDouble() }

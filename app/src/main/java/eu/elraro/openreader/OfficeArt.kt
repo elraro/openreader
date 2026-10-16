@@ -47,20 +47,17 @@ object OfficeArt {
                     val cbSave = b.getInt(h + 28); val compression = d[h + 32].toInt() and 0xFF
                     val dataStart = h + 34
                     if (cbSave <= 0 || dataStart + cbSave > end) return null
-                    val raw = if (compression == 0) {
-                        val inf = Inflater()
-                        inf.setInput(d, dataStart, cbSave)
-                        val out = java.io.ByteArrayOutputStream()
-                        val buf = ByteArray(8192)
-                        while (!inf.finished() && out.size() < 16_000_000) {
-                            val n = inf.inflate(buf)
-                            if (n == 0 && (inf.needsInput() || inf.needsDictionary())) break
-                            out.write(buf, 0, n)
-                        }
-                        inf.end(); out.toByteArray()
-                    } else d.copyOfRange(dataStart, dataStart + cbSave)
+                    val raw = if (compression == 0) inflate(d, dataStart, cbSave) else d.copyOfRange(dataStart, dataStart + cbSave)
                     val raw2 = if (type == 0xF01B && raw.size > 4 && le(raw, 0) != 0x9AC6CDD7.toInt()) wmfWithoutHeader(raw, b, h) else raw
                     Metafile.toSvgDataUri(raw2)?.let { Blip(it) }
+                }
+                0xF01C -> { // PICT: take the JPEG/PNG that QuickTime-style PICTs embed
+                    val h = body + uids
+                    val cbSave = b.getInt(h + 28); val compression = d[h + 32].toInt() and 0xFF
+                    val dataStart = h + 34
+                    if (cbSave <= 0 || dataStart + cbSave > end) return null
+                    val raw = if (compression == 0) inflate(d, dataStart, cbSave) else d.copyOfRange(dataStart, dataStart + cbSave)
+                    embeddedImage(raw)
                 }
                 0xF01D, 0xF02A -> Blip("data:image/jpeg;base64," + Base64.encodeToString(d, body + uids + 1, end - body - uids - 1, Base64.NO_WRAP))
                 0xF01E -> Blip("data:image/png;base64," + Base64.encodeToString(d, body + uids + 1, end - body - uids - 1, Base64.NO_WRAP))
@@ -68,6 +65,34 @@ object OfficeArt {
                 else -> null
             }
         } catch (e: Exception) { null }
+    }
+
+    private fun inflate(d: ByteArray, start: Int, len: Int): ByteArray {
+        val inf = Inflater()
+        inf.setInput(d, start, len)
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (!inf.finished() && out.size() < 16_000_000) {
+            val n = inf.inflate(buf)
+            if (n == 0 && (inf.needsInput() || inf.needsDictionary())) break
+            out.write(buf, 0, n)
+        }
+        inf.end()
+        return out.toByteArray()
+    }
+
+    /** First JPEG or PNG inside raw picture data (PICT files wrap them in QuickTime opcodes). */
+    private fun embeddedImage(raw: ByteArray): Blip? {
+        for (i in 0 until raw.size - 4) {
+            if (raw[i] == 0xFF.toByte() && raw[i + 1] == 0xD8.toByte() && raw[i + 2] == 0xFF.toByte()) {
+                var e = raw.size - 2
+                while (e > i && !(raw[e] == 0xFF.toByte() && raw[e + 1] == 0xD9.toByte())) e--
+                if (e > i) return Blip("data:image/jpeg;base64," + Base64.encodeToString(raw, i, e + 2 - i, Base64.NO_WRAP))
+            }
+            if (raw[i] == 0x89.toByte() && raw[i + 1] == 'P'.code.toByte() && raw[i + 2] == 'N'.code.toByte() && raw[i + 3] == 'G'.code.toByte())
+                return Blip("data:image/png;base64," + Base64.encodeToString(raw, i, raw.size - i, Base64.NO_WRAP))
+        }
+        return null
     }
 
     private fun le(b: ByteArray, o: Int) = (b[o].toInt() and 255) or ((b[o + 1].toInt() and 255) shl 8) or ((b[o + 2].toInt() and 255) shl 16) or ((b[o + 3].toInt() and 255) shl 24)

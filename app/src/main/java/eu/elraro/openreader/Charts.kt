@@ -81,7 +81,9 @@ object Charts {
         }
 
         if (flat.isEmpty()) { sb.append("</svg>"); return sb.toString() }
-        if (pie) {
+        if (types.any { it.name == "radarChart" }) {
+            radar(sb, flat, left, top, right, bottom, fs, types.first { it.name == "radarChart" }.child("radarStyle")?.attr("val") == "filled")
+        } else if (pie) {
             val doughnut = types.any { it.name == "doughnutChart" }
             pieChart(sb, flat[0], scheme, left, top, right, bottom, doughnut, fs)
         } else {
@@ -181,6 +183,35 @@ object Charts {
             a += da
         }
         if (doughnut) sb.append("<circle cx=\"${n(cx)}\" cy=\"${n(cy)}\" r=\"${n(rad * 0.5)}\" fill=\"#fff\"/>")
+    }
+
+    private fun radar(sb: StringBuilder, series: List<Series>, l: Double, t: Double, r: Double, b: Double, fs: Double, filled: Boolean) {
+        val n = series.maxOf { max(it.cats.size, it.vals.size) }.coerceAtLeast(3)
+        val cx = (l + r) / 2; val cy = (t + b) / 2
+        val rad = min(r - l, b - t) / 2 - fs * 2
+        if (rad <= 10) return
+        val hi = series.flatMap { it.vals }.filterNotNull().maxOrNull()?.takeIf { it > 0 } ?: 1.0
+        val step = niceStep(hi, 4); val top = Math.ceil(hi / step) * step
+        fun pt(i: Int, v: Double): Pair<Double, Double> { val a = -PI / 2 + 2 * PI * i / n; val rr = rad * v / top; return (cx + rr * cos(a)) to (cy + rr * sin(a)) }
+        var ring = step; var g = 0
+        while (ring <= top + step * 1e-6 && g++ < 20) {
+            sb.append("<polygon fill=\"none\" stroke=\"#d9d9d9\" points=\"${(0 until n).joinToString(" ") { pt(it, ring).let { p -> "${n(p.first)},${n(p.second)}" } }}\"/>")
+            sb.append("<text x=\"${n(cx + 3)}\" y=\"${n(cy - rad * ring / top + fs * 0.9)}\" fill=\"#7f7f7f\" font-size=\"${n(fs * 0.85)}\">${esc(NumFmt.general(ring))}</text>")
+            ring += step
+        }
+        val labels = series.maxByOrNull { it.cats.size }?.cats.orEmpty()
+        for (i in 0 until n) {
+            val e = pt(i, top)
+            sb.append("<line x1=\"${n(cx)}\" y1=\"${n(cy)}\" x2=\"${n(e.first)}\" y2=\"${n(e.second)}\" stroke=\"#d9d9d9\"/>")
+            val lp = pt(i, top * 1.1)
+            val anchor = when { abs(lp.first - cx) < 4 -> "middle"; lp.first > cx -> "start"; else -> "end" }
+            sb.append("<text x=\"${n(lp.first)}\" y=\"${n(lp.second + fs * 0.35)}\" text-anchor=\"$anchor\" fill=\"#595959\">${esc(labels.getOrNull(i) ?: "")}</text>")
+        }
+        for (s in series) {
+            val pts = (0 until n).map { pt(it, s.vals.getOrNull(it) ?: 0.0) }
+            val p = pts.joinToString(" ") { "${n(it.first)},${n(it.second)}" }
+            sb.append("<polygon points=\"$p\" fill=\"${if (filled) s.color else "none"}\" fill-opacity=\"0.5\" stroke=\"${s.color}\" stroke-width=\"2\"/>")
+        }
     }
 
     // ---------------------------------------------------------------- bar / line / area / scatter
@@ -330,7 +361,18 @@ object Charts {
                         }
                     }
                 }
-                kind.startsWith("line") || kind.startsWith("area") || kind.startsWith("radar") || kind.startsWith("stock") -> {
+                kind == "stockChart" -> {
+                    val has4 = list.size >= 4
+                    val o = if (has4) list[0] else null; val hiS = list[if (has4) 1 else 0]; val loS = list[if (has4) 2 else 1]; val clS = list.getOrNull(if (has4) 3 else 2)
+                    for (i in 0 until ncat) {
+                        val h = hiS.vals.getOrNull(i) ?: continue; val lo = loS.vals.getOrNull(i) ?: continue
+                        val x = px0 + band * (i + 0.5)
+                        sb.append("<line x1=\"${n(x)}\" y1=\"${n(vy(h))}\" x2=\"${n(x)}\" y2=\"${n(vy(lo))}\" stroke=\"#404040\" stroke-width=\"2\"/>")
+                        o?.vals?.getOrNull(i)?.let { sb.append("<line x1=\"${n(x - 5)}\" y1=\"${n(vy(it))}\" x2=\"${n(x)}\" y2=\"${n(vy(it))}\" stroke=\"#404040\" stroke-width=\"2\"/>") }
+                        clS?.vals?.getOrNull(i)?.let { sb.append("<line x1=\"${n(x)}\" y1=\"${n(vy(it))}\" x2=\"${n(x + 5)}\" y2=\"${n(vy(it))}\" stroke=\"#404040\" stroke-width=\"2\"/>") }
+                    }
+                }
+                kind.startsWith("line") || kind.startsWith("area") -> {
                     val isArea = kind.startsWith("area")
                     val stacked = grouping == "stacked" || grouping == "percentStacked"
                     val acc = DoubleArray(ncat)

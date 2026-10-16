@@ -28,7 +28,12 @@ object Diagrams {
         val items = dm.findAll("pt").filter { it.attr("type") == null || it.attr("type") == "node" }
             .map { p -> p.findAll("t").joinToString("") { it.text.toString() } }.filter { it.isNotBlank() }
         if (items.isEmpty()) return null
-        return "<ul style=\"margin:0;padding-left:1.4em;font-size:14px\">" + items.joinToString("") { "<li>${esc(it)}</li>" } + "</ul>"
+        // no cached drawing: show the nodes as boxes in reading order
+        val accent = scheme.get("accent1") ?: "4472C4"
+        val boxes = items.joinToString("") {
+            "<div style=\"background:#$accent;color:#fff;padding:10px 16px;border-radius:8px;min-width:80px;text-align:center;font-size:14px\">${esc(it)}</div>"
+        }
+        return "<div style=\"display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;width:${f(wPx)}px;min-height:${f(hPx)}px\">$boxes</div>"
     }
 
     private fun renderDrawing(root: Node, scheme: ColorScheme, wPx: Double, hPx: Double): String {
