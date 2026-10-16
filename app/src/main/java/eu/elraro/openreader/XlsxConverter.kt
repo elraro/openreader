@@ -7,8 +7,8 @@ import java.util.TimeZone
 
 object XlsxConverter {
     private const val WORKBOOK = "xl/workbook.xml"
-    private const val MAX_ROWS = 2000
-    private const val MAX_COLS = 100
+    internal const val MAX_ROWS = 2000
+    internal const val MAX_COLS = 100
 
     fun toHtml(pkg: OoxmlPackage, title: String): String {
         val wb = pkg.xml(WORKBOOK) ?: throw IllegalArgumentException("Missing $WORKBOOK")
@@ -28,6 +28,10 @@ object XlsxConverter {
             if (sheet == null) body.append("<p><i>Sheet could not be read.</i></p>")
             else sheet(sheet, shared, dateStyles, body)
         }
+        return page(title, tabs, body)
+    }
+
+    internal fun page(title: String, tabs: CharSequence, body: CharSequence): String {
         val css = """
 .tabs{position:sticky;top:0;background:#e8f0fe;padding:6px;white-space:nowrap;overflow-x:auto}
 .tabs a{margin-right:12px;color:#1565c0;text-decoration:none;font-weight:bold}
@@ -66,6 +70,12 @@ td.n{text-align:right}
             }
             grid.add(rowNo to cells)
         }
+        renderGrid(grid, maxCol, out)
+        if (rows.size > MAX_ROWS) out.append("<p><i>Showing first $MAX_ROWS rows.</i></p>")
+    }
+
+    /** rows: (1-based row number, column index -> (text, isNumeric)). */
+    internal fun renderGrid(grid: List<Pair<Int, Map<Int, Pair<String, Boolean>>>>, maxCol: Int, out: StringBuilder) {
         out.append("<div class=\"wrap\"><table><tr><th></th>")
         for (c in 0..maxCol) out.append("<th>${colName(c)}</th>")
         out.append("</tr>")
@@ -79,7 +89,6 @@ td.n{text-align:right}
             out.append("</tr>")
         }
         out.append("</table></div>")
-        if (rows.size > MAX_ROWS) out.append("<p><i>Showing first $MAX_ROWS rows.</i></p>")
     }
 
     /** Returns display text and whether it is numeric (right-aligned). */
@@ -100,11 +109,11 @@ td.n{text-align:right}
         }
     }
 
-    private fun formatNumber(d: Double): String =
+    internal fun formatNumber(d: Double): String =
         if (d == Math.rint(d) && Math.abs(d) < 1e15) d.toLong().toString()
         else java.math.BigDecimal(d).round(java.math.MathContext(12)).stripTrailingZeros().toPlainString()
 
-    private fun formatDate(serial: Double): String {
+    internal fun formatDate(serial: Double): String {
         val ms = Math.round((serial - 25569.0) * 86400000.0)
         val hasTime = serial != Math.floor(serial)
         val f = SimpleDateFormat(if (hasTime) "yyyy-MM-dd HH:mm" else "yyyy-MM-dd", Locale.US)
@@ -141,7 +150,7 @@ td.n{text-align:right}
         return out
     }
 
-    private fun looksLikeDate(code: String): Boolean {
+    internal fun looksLikeDate(code: String): Boolean {
         val stripped = code.replace(Regex("\"[^\"]*\"|\\[[^]]*]|\\\\."), "").lowercase()
         return stripped.any { it in "ymdhs" }
     }
@@ -156,7 +165,7 @@ td.n{text-align:right}
         return n - 1
     }
 
-    private fun colName(i: Int): String {
+    internal fun colName(i: Int): String {
         var n = i + 1
         val sb = StringBuilder()
         while (n > 0) {

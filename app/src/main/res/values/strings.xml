@@ -2,7 +2,8 @@
     <string name="app_name">OpenReader</string>
     <string name="open_document">Open document</string>
     <string name="export_pdf">Export PDF</string>
-    <string name="empty_hint">Open a Word (.docx), Excel (.xlsx) or PowerPoint (.pptx) document.</string>
-    <string name="error_unsupported">Unsupported file. Only .docx, .xlsx and .pptx are supported (not legacy .doc/.xls/.ppt).</string>
+    <string name="empty_hint">Open a Word, Excel or PowerPoint document (.docx .xlsx .pptx .doc .xls .ppt).</string>
+    <string name="error_unsupported">Unsupported file. Supported: .docx, .xlsx, .pptx, .doc, .xls and .ppt.</string>
     <string name="error_read">Could not read document: %1$s</string>
+    <string name="error_encrypted">This document is password-protected and cannot be opened.</string>
 </resources>

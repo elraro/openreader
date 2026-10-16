@@ -1,6 +1,6 @@
 # OpenReader
 
-Android app that opens Microsoft Office documents — `.docx`, `.xlsx`, `.pptx` — without any Office dependency.
+Android app that opens Microsoft Office documents — `.docx`, `.xlsx`, `.pptx` and the legacy `.doc`, `.xls`, `.ppt` — with no third-party libraries (no Apache POI).
 
 - **Viewer**: each file is parsed from its OOXML package (own lightweight parser) into HTML and shown in a WebView (JavaScript disabled) with pinch-zoom.
   - Word: headings, bold/italic/underline, colors, lists, tables, images.
@@ -8,7 +8,7 @@ Android app that opens Microsoft Office documents — `.docx`, `.xlsx`, `.pptx` 
   - PowerPoint: slides in order, positioned text/pictures/tables, groups, speaker notes.
 - **Export to PDF**: toolbar action opens the system print dialog; choose *Save as PDF*.
 - Opens files from the in-app picker or from other apps (`ACTION_VIEW`).
-- Legacy binary formats (`.doc`, `.xls`, `.ppt`) are not supported.
+- Legacy formats (OLE2) are read by a built-in parser and shown as text/tables only: no fonts, colours or images. Old `.ppt` files that keep edit history may show earlier slide versions. Password-protected files are rejected.
 
 ## Build
 

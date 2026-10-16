@@ -111,7 +111,7 @@ class MainActivity : Activity() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(MIME_DOCX, MIME_XLSX, MIME_PPTX))
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(MIME_DOCX, MIME_XLSX, MIME_PPTX, MIME_DOC, MIME_XLS, MIME_PPT))
         }
         startActivityForResult(i, REQ_OPEN)
     }
@@ -151,6 +151,7 @@ class MainActivity : Activity() {
         val tmp = File(cacheDir, "current.ooxml")
         contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } }
             ?: throw IllegalStateException("Cannot open file")
+        if (Cfb.isCfb(tmp.readBytes())) return convertLegacy(tmp, name)
         val pkg = try {
             OoxmlPackage(tmp)
         } catch (e: java.util.zip.ZipException) {
@@ -163,6 +164,17 @@ class MainActivity : Activity() {
                 it.has("ppt/presentation.xml") -> PptxConverter.toHtml(it, name)
                 else -> throw UnsupportedFormat(getString(R.string.error_unsupported))
             }
+        }
+    }
+
+    private fun convertLegacy(file: File, name: String): String {
+        val cfb = Cfb.parse(file.readBytes())
+        return when {
+            cfb.hasStream("EncryptedPackage") -> throw UnsupportedFormat(getString(R.string.error_encrypted))
+            cfb.hasStream("WordDocument") -> DocConverter.toHtml(cfb, name)
+            cfb.hasStream("Workbook") || cfb.hasStream("Book") -> XlsConverter.toHtml(cfb, name)
+            cfb.hasStream("PowerPoint Document") -> PptConverter.toHtml(cfb, name)
+            else -> throw UnsupportedFormat(getString(R.string.error_unsupported))
         }
     }
 
@@ -190,6 +202,9 @@ class MainActivity : Activity() {
         private const val REQ_OPEN = 1
         private const val MENU_OPEN = 1
         private const val MENU_PDF = 2
+        private const val MIME_DOC = "application/msword"
+        private const val MIME_XLS = "application/vnd.ms-excel"
+        private const val MIME_PPT = "application/vnd.ms-powerpoint"
         private const val MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         private const val MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         private const val MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
