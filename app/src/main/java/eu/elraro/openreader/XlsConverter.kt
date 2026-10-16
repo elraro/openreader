@@ -22,17 +22,15 @@ object XlsConverter {
         var sheetIdx = -1
         var pendingFormula: Triple<Int, Int, Int>? = null
 
-        fun isDate(xf: Int): Boolean {
-            val id = xfFmt.getOrNull(xf) ?: return false
-            return if (id in customFmt) XlsxConverter.looksLikeDate(customFmt.getValue(id)) else id in 14..22 || id in 45..47
-        }
         fun put(r: Int, c: Int, text: String, numeric: Boolean) {
             val s = cur ?: return
             if (text.isEmpty() || r >= XlsxConverter.MAX_ROWS || c >= XlsxConverter.MAX_COLS) return
             s.cells.getOrPut(r) { HashMap() }[c] = text to numeric
         }
-        fun number(r: Int, c: Int, xf: Int, d: Double) =
-            if (isDate(xf)) put(r, c, XlsxConverter.formatDate(d), false) else put(r, c, XlsxConverter.formatNumber(d), true)
+        fun number(r: Int, c: Int, xf: Int, d: Double) {
+            val code = NumFmt.code(xfFmt.getOrNull(xf) ?: 0, customFmt)
+            put(r, c, NumFmt.format(d, code), !NumFmt.isDate(code))
+        }
 
         var pos = 0
         while (pos + 4 <= wb.size) {
