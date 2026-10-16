@@ -85,7 +85,7 @@ body{background:#d9d9d9;padding:8px 0}
 p{margin:0;min-height:1em;white-space:pre-wrap}
 table{border-collapse:collapse;white-space:normal}
 td{vertical-align:top;border:1px solid #999;padding:2pt 4pt;white-space:pre-wrap}
-@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;width:auto;min-height:0;page-break-after:always}.page:last-child{page-break-after:auto}}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0 auto;width:${'$'}{Math.round(pw * 4 / 3)}px;min-height:0;zoom:${'$'}{fmt(minOf(0.97, 790.0 / (pw * 4 / 3)))};page-break-after:always}.page:last-child{page-break-after:auto}}
 """
         return htmlPage(title, css, body, "width=${Math.round(pw * 4 / 3) + 16}", Paginate.JS)
     }
