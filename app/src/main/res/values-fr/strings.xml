@@ -18,4 +18,5 @@
     <string name="about_text">Lecteur libre et gratuit pour les documents Word, Excel et PowerPoint.</string>
     <string name="source_code">Code source sur GitHub</string>
     <string name="donate">Faire un don via PayPal</string>
+    <string name="pages_count">%1$d pages</string>
 </resources>

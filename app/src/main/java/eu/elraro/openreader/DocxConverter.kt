@@ -69,10 +69,10 @@ table{border-collapse:collapse;white-space:normal}
 td{vertical-align:top;overflow-wrap:break-word;white-space:pre-wrap}
 .fn{display:flex;gap:4pt;font-size:.85em}
 hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
-@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0 auto;width:${Math.round(page.w * 4 / 3)}px;min-height:0;zoom:${fmt(minOf(0.97, 790.0 / (page.w * 4 / 3)))};page-break-after:always}.page:last-child{page-break-after:auto}}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0 auto;width:${Math.round(page.w * 4 / 3)}px;min-height:0;zoom:0.995;page-break-after:always}.page:last-child{page-break-after:auto}}
 """
         val viewport = "width=${Math.round(page.w * 4 / 3) + 16}"
-        return htmlPage(title, css, pages.toString(), viewport, Paginate.JS)
+        return htmlPage(title, css, pages.toString(), viewport, Paginate.JS, page.w to page.h)
     }
 
     private fun pt(d: Double) = fmt(d)

@@ -18,4 +18,5 @@
     <string name="about_text">Lector gratuït i de codi obert per a documents de Word, Excel i PowerPoint.</string>
     <string name="source_code">Codi font a GitHub</string>
     <string name="donate">Dona per PayPal</string>
+    <string name="pages_count">%1$d pàgines</string>
 </resources>

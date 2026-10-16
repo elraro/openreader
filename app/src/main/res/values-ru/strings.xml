@@ -18,4 +18,5 @@
     <string name="about_text">Свободная программа с открытым кодом для чтения документов Word, Excel и PowerPoint.</string>
     <string name="source_code">Исходный код на GitHub</string>
     <string name="donate">Пожертвовать через PayPal</string>
+    <string name="pages_count">Страниц: %1$d</string>
 </resources>

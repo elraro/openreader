@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var empty: LinearLayout
     private lateinit var spinner: ProgressBar
     private var docTitle = ""
+    private var pageSizePt: Pair<Double, Double>? = null
     private var pageLoaded = false
     private val worker = Executors.newSingleThreadExecutor()
 
@@ -100,6 +101,12 @@ class MainActivity : Activity() {
                     pageLoaded = true
                     spinner.visibility = View.GONE
                     invalidateOptionsMenu()
+                }
+            }
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onReceivedTitle(view: WebView, t: String?) {
+                    // the pagination script reports how many pages the document came to
+                    if (t != null && t.startsWith("pages:")) actionBar?.subtitle = getString(R.string.pages_count, t.removePrefix("pages:").toIntOrNull() ?: 0)
                 }
             }
             visibility = View.GONE
@@ -193,9 +200,11 @@ class MainActivity : Activity() {
             runOnUiThread {
                 result.onSuccess { html ->
                     docTitle = name
+                    actionBar?.subtitle = null
                     title = name
                     empty.visibility = View.GONE
                     web.visibility = View.VISIBLE
+                    pageSizePt = Regex("name=\"or-page-pt\" content=\"([0-9.]+)x([0-9.]+)\"").find(html)?.let { it.groupValues[1].toDouble() to it.groupValues[2].toDouble() }
                     web.loadDataWithBaseURL(Fonts.BASE_URL, darken(html), "text/html", "utf-8", null)
                 }.onFailure { e ->
                     spinner.visibility = View.GONE
@@ -260,7 +269,14 @@ class MainActivity : Activity() {
         if (!pageLoaded) return
         val pm = getSystemService(PRINT_SERVICE) as PrintManager
         val jobName = docTitle.substringBeforeLast('.').ifEmpty { "document" }
-        pm.print(jobName, web.createPrintDocumentAdapter(jobName), PrintAttributes.Builder().build())
+        val attrs = PrintAttributes.Builder().apply {
+            // print on a page of the document's own size, without margins, so printed pages equal the pages on screen
+            pageSizePt?.let { (w, h) ->
+                setMediaSize(PrintAttributes.MediaSize("doc", docTitle.ifEmpty { "Document" }, Math.round(w / 72 * 1000).toInt(), Math.round(h / 72 * 1000).toInt()))
+                setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+            }
+        }.build()
+        pm.print(jobName, web.createPrintDocumentAdapter(jobName), attrs)
     }
 
     override fun onDestroy() {

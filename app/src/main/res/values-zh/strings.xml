@@ -18,4 +18,5 @@
     <string name="about_text">免费开源的 Word、Excel 和 PowerPoint 文档阅读器。</string>
     <string name="source_code">GitHub 源代码</string>
     <string name="donate">通过 PayPal 捐赠</string>
+    <string name="pages_count">%1$d 页</string>
 </resources>

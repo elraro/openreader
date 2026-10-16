@@ -149,13 +149,13 @@ private val HEX = Regex("^[0-9A-Fa-f]{6}$")
 fun safeColor(v: String?): String? = v?.takeIf { HEX.matches(it) }?.let { "#$it" }
 
 /** [script] is the only code allowed to run: the CSP admits just scripts carrying this page's random nonce. */
-fun htmlPage(title: String, css: String, body: String, viewport: String = "width=device-width, initial-scale=1", script: String? = null): String {
+fun htmlPage(title: String, css: String, body: String, viewport: String = "width=device-width, initial-scale=1", script: String? = null, pageSizePt: Pair<Double, Double>? = null): String {
     val nonce = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
     val csp = if (script != null) "script-src 'nonce-$nonce'; object-src 'none'" else "script-src 'none'; object-src 'none'"
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="$csp">
-<meta name="viewport" content="$viewport">
+<meta name="viewport" content="$viewport">${pageSizePt?.let { "\n<meta name=\"or-page-pt\" content=\"${it.first}x${it.second}\">" }.orEmpty()}
 <title>${esc(title)}</title>
 <style>
 ${Fonts.fontFaceCss}

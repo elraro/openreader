@@ -18,4 +18,5 @@
     <string name="about_text">Word、Excel、PowerPoint ドキュメント用の無料のオープンソースリーダーです。</string>
     <string name="source_code">GitHub のソースコード</string>
     <string name="donate">PayPal で寄付</string>
+    <string name="pages_count">%1$d ページ</string>
 </resources>

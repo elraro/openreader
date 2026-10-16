@@ -74,7 +74,9 @@ object Paginate {
         Array.prototype.forEach.call(p.querySelectorAll('.fnp'),function(e){e.textContent=String(pages.length)});
       });
     }catch(e){}
-    document.documentElement.setAttribute('data-paginated',String(document.querySelectorAll('.page').length));
+    var total=document.querySelectorAll('.page').length;
+    document.documentElement.setAttribute('data-paginated',String(total));
+    document.title='pages:'+total;
   }
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){setTimeout(run,50)});
   window.addEventListener('load',function(){setTimeout(run,1500)});
