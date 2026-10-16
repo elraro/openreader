@@ -86,7 +86,10 @@ class RunProps {
 }
 
 /** Paragraph-level properties. Lengths in points. */
+class TabStop(val kind: String, val pos: Double, val leader: String?)
+
 class ParaProps {
+    var tabs: List<TabStop>? = null
     var jc: String? = null
     var left: Double? = null
     var right: Double? = null
@@ -111,6 +114,12 @@ class ParaProps {
         o.fill?.let { fill = it }; o.numId?.let { numId = it }; o.ilvl?.let { ilvl = it }
         o.pageBreakBefore?.let { pageBreakBefore = it }; o.contextual?.let { contextual = it }
         o.borders?.let { borders = (borders ?: emptyMap()) + it }
+        o.tabs?.let { n ->
+            val m = LinkedHashMap<Double, TabStop>()
+            tabs?.forEach { m[it.pos] = it }
+            n.forEach { if (it.kind == "clear") m.remove(it.pos) else m[it.pos] = it }
+            tabs = m.values.toList()
+        }
         return this
     }
 
@@ -141,6 +150,12 @@ class ParaProps {
             pPr.child("numPr")?.let { n ->
                 n.child("numId")?.attr("val")?.let { p.numId = it }
                 n.child("ilvl")?.attr("val")?.toIntOrNull()?.let { p.ilvl = it }
+            }
+            pPr.child("tabs")?.let { t ->
+                p.tabs = t.all("tab").mapNotNull { x ->
+                    val pos = x.attr("pos")?.toDoubleOrNull() ?: return@mapNotNull null
+                    TabStop(x.attr("val") ?: "left", pos / 20, x.attr("leader"))
+                }
             }
             pPr.child("pageBreakBefore")?.let { p.pageBreakBefore = it.attr("val") != "0" && it.attr("val") != "false" }
             pPr.child("contextualSpacing")?.let { p.contextual = it.attr("val") != "0" && it.attr("val") != "false" }

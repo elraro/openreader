@@ -4,6 +4,8 @@ import java.util.Locale
 
 object DocxConverter {
     private const val PART = "word/document.xml"
+    private const val PB = "\u0000" // page-break marker used while rendering the body
+    private const val TAB = "\u0001" // tab marker used for paragraphs with custom tab stops
 
     fun toHtml(pkg: OoxmlPackage, title: String): String {
         val doc = pkg.xml(PART) ?: throw IllegalArgumentException("Missing $PART")
@@ -36,17 +38,26 @@ object DocxConverter {
             Renderer(shared, part).blocks(root, sb, null)
             return sb.toString().takeIf { it.contains("<img") || it.replace(Regex("<[^>]+>"), "").replace("&nbsp;", "").isNotBlank() }
         }
-        headerFooter("header")?.let { out.append("<div class=\"hf\">$it</div>") }
-        out.append("<div class=\"bd\">")
-        main.blocks(body, out, null)
-        main.footnotes(out)
-        out.append("</div>")
-        headerFooter("footer")?.let { out.append("<div class=\"hf\">$it</div>") }
+        val header = headerFooter("header")
+        val footer = headerFooter("footer")
+        main.blocks(body, out, null, true)
+        val chunks = out.toString().split(PB).filter { it.isNotEmpty() }.ifEmpty { listOf("") }.toMutableList()
+        val foot = StringBuilder()
+        main.footnotes(foot)
+        chunks[chunks.size - 1] = chunks.last() + foot
+        val pages = StringBuilder()
+        for (c in chunks) {
+            pages.append("<div class=\"page\">")
+            header?.let { pages.append("<div class=\"hf\">$it</div>") }
+            pages.append("<div class=\"bd\">").append(c).append("</div>")
+            footer?.let { pages.append("<div class=\"hf\">$it</div>") }
+            pages.append("</div>")
+        }
 
         val css = """
 html{-webkit-text-size-adjust:100%}
 body{background:#d9d9d9;padding:8px 0}
-.page{position:relative;z-index:0;background:#fff;margin:0 auto;box-shadow:0 1px 4px rgba(0,0,0,.4);box-sizing:border-box;
+.page{position:relative;z-index:0;background:#fff;margin:0 auto 8px auto;box-shadow:0 1px 4px rgba(0,0,0,.4);box-sizing:border-box;
   width:${pt(page.w)}pt;min-height:${pt(page.h)}pt;padding:${pt(page.top)}pt ${pt(page.right)}pt ${pt(page.bottom)}pt ${pt(page.left)}pt;
   tab-size:${pt(shared.defaultTab)}pt;-moz-tab-size:${pt(shared.defaultTab)}pt;white-space:pre-wrap;overflow-wrap:break-word}
 .page{display:flex;flex-direction:column}
@@ -58,10 +69,10 @@ table{border-collapse:collapse;white-space:normal}
 td{vertical-align:top;overflow-wrap:break-word;white-space:pre-wrap}
 .fn{display:flex;gap:4pt;font-size:.85em}
 hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
-@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;width:auto;min-height:0}}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;width:auto;min-height:0;page-break-after:always}.page:last-child{page-break-after:auto}}
 """
         val viewport = "width=${Math.round(page.w * 4 / 3) + 16}"
-        return htmlPage(title, css, "<div class=\"page\">$out</div>", viewport)
+        return htmlPage(title, css, pages.toString(), viewport)
     }
 
     private fun pt(d: Double) = fmt(d)
@@ -89,6 +100,8 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
     private class Renderer(val s: Shared, val part: String) {
         val rels = s.pkg.rels(part)
         val ext = s.pkg.externalRels(part)
+        private val skipBreaks = HashSet<Node>()
+        private var tabSplit = false
 
         fun footnotes(out: StringBuilder) {
             if (s.footnoteOrder.isEmpty()) return
@@ -105,16 +118,16 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
             }
         }
 
-        fun blocks(parent: Node, out: StringBuilder, cell: CellCtx?) {
+        fun blocks(parent: Node, out: StringBuilder, cell: CellCtx?, top: Boolean = false) {
             val kids = parent.children.filter { it.name == "p" || it.name == "tbl" || it.name == "sdt" }
             var prev: String? = null
             for ((idx, n) in kids.withIndex()) when (n.name) {
                 "p" -> {
                     val next = kids.getOrNull(idx + 1)?.takeIf { it.name == "p" }?.child("pPr")?.child("pStyle")?.attr("val")
-                    prev = paragraph(n, out, cell, prev, next)
+                    prev = paragraph(n, out, cell, prev, next, top)
                 }
                 "tbl" -> { table(n, out, cell); prev = null }
-                "sdt" -> { n.child("sdtContent")?.let { blocks(it, out, cell) }; prev = null }
+                "sdt" -> { n.child("sdtContent")?.let { blocks(it, out, cell, top) }; prev = null }
             }
         }
 
@@ -252,7 +265,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
 
         // ---- paragraphs ----
 
-        private fun paragraph(pNode: Node, out: StringBuilder, cell: CellCtx?, prevStyle: String?, nextStyle: String?): String? {
+        private fun paragraph(pNode: Node, out: StringBuilder, cell: CellCtx?, prevStyle: String?, nextStyle: String?, top: Boolean): String? {
             val pPr = pNode.child("pPr")
             val styleId = pPr?.child("pStyle")?.attr("val")
             val (stP, stR) = s.styles.resolve(styleId)
@@ -277,9 +290,51 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
             // paragraph-mark run properties are used for empty paragraphs
             val markRun = base.copy().merge(RunProps.of(pPr?.child("rPr"), s.theme))
 
+            // explicit page breaks only matter for body-level paragraphs
+            var breakBefore = false
+            var breakAfter = false
+            if (top) {
+                if (p.pageBreakBefore == true) breakBefore = true
+                val items = pNode.all("r").flatMap { r -> r.children.filter { it.name != "rPr" } }
+                val first = items.firstOrNull { it.name != "lastRenderedPageBreak" }
+                if (items.firstOrNull()?.name == "lastRenderedPageBreak") breakBefore = true
+                if (first != null && first.name == "br" && first.attr("type") == "page") { breakBefore = true; skipBreaks.add(first) }
+                val last = items.lastOrNull()
+                if (last != null && last !== first && last.name == "br" && last.attr("type") == "page") { breakAfter = true; skipBreaks.add(last) }
+                val sect = pPr?.child("sectPr")
+                if (sect != null && sect.child("type")?.attr("val") != "continuous") breakAfter = true
+            }
+            val tabStops = p.tabs?.filter { it.kind != "clear" }?.sortedBy { it.pos }.orEmpty()
+            tabSplit = tabStops.isNotEmpty()
             val inner = StringBuilder()
             runs(pNode, inner, base)
-            val content = inner.toString()
+            tabSplit = false
+            var content = inner.toString()
+            var positioned = false
+            if (tabStops.isNotEmpty() && content.contains(TAB)) {
+                val segs = content.split(TAB)
+                val marL = p.left ?: 0.0
+                val sbT = StringBuilder()
+                val allRight = tabStops.all { it.kind == "right" || it.kind == "decimal" }
+                if (segs.size == 2 && tabStops.size == 1 && allRight) {
+                    val ts = tabStops[0]
+                    val leader = when (ts.leader) { "dot", "middleDot" -> "dotted"; "hyphen" -> "dashed"; "underscore" -> "solid"; else -> null }
+                    sbT.append("<span style=\"display:flex;width:${fmt(ts.pos - marL)}pt\"><span>${segs[0]}</span><span style=\"flex:1;margin:0 2pt")
+                    if (leader != null) sbT.append(";border-bottom:1px $leader;align-self:flex-end;margin-bottom:.3em")
+                    sbT.append("\"></span><span>${segs[1]}</span></span>")
+                } else {
+                    sbT.append(segs[0])
+                    var tail = StringBuilder()
+                    for (i in 1 until segs.size) {
+                        val ts = tabStops.getOrNull(i - 1)
+                        if (ts == null) { sbT.append('\t').append(segs[i]); continue }
+                        val tr = when (ts.kind) { "center" -> "transform:translateX(-50%);"; "right", "decimal" -> "transform:translateX(-100%);"; else -> "" }
+                        sbT.append("<span style=\"position:absolute;white-space:nowrap;left:${fmt(ts.pos - marL)}pt;$tr\">${segs[i]}</span>")
+                    }
+                    positioned = true
+                }
+                content = sbT.toString()
+            }
 
             val css = StringBuilder()
             p.jc?.let {
@@ -306,8 +361,11 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
             if (p.borders != null) css.append("padding:1pt 4pt;")
             if (p.pageBreakBefore == true) css.append("page-break-before:always;")
             css.append(runCss(base, null))
+            if (positioned) css.append("position:relative;")
 
-            val sb = StringBuilder("<div class=\"p\" style=\"$css\">")
+            val sb = StringBuilder()
+            if (breakBefore) sb.append(PB)
+            sb.append("<div class=\"p\" style=\"$css\">")
             if (marker != null && marker.isNotEmpty()) {
                 val ms = StringBuilder()
                 markerProps?.let { ms.append(runCss(base.copy().merge(it), base)) }
@@ -324,6 +382,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
                 sb.append("<span style=\"${runCss(markRun, base)}\">&nbsp;</span>")
             } else sb.append(content)
             sb.append("</div>")
+            if (breakAfter) sb.append(PB)
             out.append(sb)
             return styleId
         }
@@ -391,14 +450,18 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
             runContent(r, content)
             if (content.isEmpty()) return
             val css = runCss(props, base)
-            if (css.isEmpty()) out.append(content) else out.append("<span style=\"$css\">").append(content).append("</span>")
+            fun wrap(x: CharSequence) = if (css.isEmpty() || x.isEmpty()) x else "<span style=\"$css\">$x</span>"
+            if (tabSplit && content.contains(TAB)) {
+                // tabs go outside the span so the paragraph can be split at them
+                out.append(content.split(TAB).joinToString(TAB) { wrap(it) })
+            } else out.append(wrap(content))
         }
 
         private fun runContent(r: Node, out: StringBuilder) {
             for (c in r.children) when (c.name) {
                 "t" -> out.append(esc(c.text.toString()))
-                "tab", "ptab" -> out.append('\t')
-                "br" -> when (c.attr("type")) {
+                "tab", "ptab" -> out.append(if (tabSplit) TAB else "\t")
+                "br" -> if (c in skipBreaks) {} else when (c.attr("type")) {
                     "page" -> out.append("<span style=\"display:block;page-break-after:always;height:0\"></span>")
                     "column" -> {}
                     else -> out.append("<br>")

@@ -67,6 +67,7 @@ class MainActivity : Activity() {
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
+                    if (uri.host == "appassets.local") return false // in-page anchors (sheet tabs)
                     if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "mailto") {
                         try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
                     }
