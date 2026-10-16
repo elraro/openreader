@@ -39,7 +39,7 @@ object PptConverter {
         val kind: Int, val spid: Int, var x: Double, var y: Double, var w: Double, var h: Double, val opt: Map<Int, Int>,
         val blocks: List<TextBlock>, val placeholder: Int, val outlineRef: Int, val flipH: Boolean, val flipV: Boolean,
         val hasAnchor: Boolean,
-    ) { var extraRot = 0.0 }
+    ) { var extraRot = 0.0; var complex: Map<Int, ByteArray> = emptyMap() }
 
     private class Page(val shapes: List<Shape>, val scheme: IntArray?, val background: Int?, val levels: Map<Int, List<Level>>, val bgOpt: Map<Int, Int>?)
 
@@ -376,7 +376,20 @@ body{background:#d9d9d9;padding:8px 0}
                     STYLE_TEXT_PROP -> if (cur != null) { blocks[blocks.size - 1] = TextBlock(cur.type, cur.text, ctx.s.copyOfRange(r.body, r.end)) }
                 }
             }
-            out.add(Shape(kind, spid, x, y, w, h, opt, blocks, placeholder, outline, flags and 0x40 != 0, flags and 0x80 != 0, anchored).also { it.extraRot = extraRot })
+            out.add(Shape(kind, spid, x, y, w, h, opt, blocks, placeholder, outline, flags and 0x40 != 0, flags and 0x80 != 0, anchored).also { it.extraRot = extraRot; it.complex = parts.firstOrNull { p -> p.type == 0xF00B }?.let { rec -> readComplex(b, rec) } ?: emptyMap() })
+        }
+        return out
+    }
+
+    private fun readComplex(b: ByteBuffer, r: Rec): Map<Int, ByteArray> {
+        val out = HashMap<Int, ByteArray>()
+        var cp = r.body + r.inst * 6
+        for (i in 0 until r.inst) {
+            val o = r.body + i * 6
+            if (o + 6 > r.end) break
+            val raw = u16(b, o)
+            val v = b.getInt(o + 2)
+            if (raw and 0x8000 != 0 && v > 0 && cp + v <= r.end) { out[raw and 0x3FFF] = b.array().copyOfRange(cp, cp + v); cp += v }
         }
         return out
     }
@@ -518,7 +531,16 @@ body{background:#d9d9d9;padding:8px 0}
         val mr = (opt[0x0083] ?: 91440) / 9525.0; val mb = (opt[0x0084] ?: 45720) / 9525.0
         css.append("padding:${f(mt)}px ${f(mr)}px ${f(mb)}px ${f(ml)}px;")
         when (opt[0x0087] ?: 0) { 1, 4 -> css.append("justify-content:center;"); 2, 5 -> css.append("justify-content:flex-end;") }
+        val geo = Geometry.path(opt, if (sh.hasAnchor) sh.complex else (inherit?.complex ?: sh.complex))
         val inner = StringBuilder()
+        if (geo != null && pib == null) {
+            val fillCol = if (filled) (opt[0x0181]?.let { color(it, scheme) } ?: "#ffffff") else "none"
+            val strokeCol = if (lined) (opt[0x01C0]?.let { color(it, scheme) } ?: "#000000") else "none"
+            val sw = maxOf(1.0, (opt[0x01CB] ?: 9525) / 9525.0)
+            inner.append("<svg viewBox=\"${f(geo.left)} ${f(geo.top)} ${f(geo.width)} ${f(geo.height)}\" preserveAspectRatio=\"none\" style=\"position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible\">" +
+                "<path d=\"${geo.d}\" fill=\"$fillCol\" stroke=\"$strokeCol\" stroke-width=\"${f(sw)}\" vector-effect=\"non-scaling-stroke\"/></svg>")
+            css.replace(Regex("background:[^;]*;"), "").also { css.setLength(0); css.append(it.replace(Regex("border:[^;]*;"), "")) }
+        }
         if (pib != null) {
             val uri = blipUri(ctx, pib)
             if (uri != null) inner.append("<img src=\"$uri\" style=\"position:absolute;left:0;top:0;width:100%;height:100%\">")

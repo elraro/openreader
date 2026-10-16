@@ -106,3 +106,54 @@ object OfficeArt {
         return out.array()
     }
 }
+
+/** Freeform ("custom geometry") outlines from the vertex and segment arrays of an OfficeArt shape. */
+object Geometry {
+    class Path(val d: String, val left: Double, val top: Double, val width: Double, val height: Double)
+
+    private fun n(v: Double) = String.format(java.util.Locale.US, "%.1f", v).trimEnd('0').trimEnd('.').ifEmpty { "0" }
+
+    fun path(props: Map<Int, Int>, complex: Map<Int, ByteArray>): Path? {
+        val vb = complex[0x0145] ?: return null
+        if (vb.size < 6) return null
+        val bb = ByteBuffer.wrap(vb).order(ByteOrder.LITTLE_ENDIAN)
+        val count = bb.getShort(0).toInt() and 0xFFFF
+        val cb = bb.getShort(4).toInt() and 0xFFFF
+        val step = if (cb == 0xFFF0) 4 else cb
+        if (count == 0 || (step != 4 && step != 8) || 6 + count * step > vb.size) return null
+        val xs = DoubleArray(count); val ys = DoubleArray(count)
+        for (i in 0 until count) {
+            if (step == 8) { xs[i] = bb.getInt(6 + i * 8).toDouble(); ys[i] = bb.getInt(10 + i * 8).toDouble() }
+            else { xs[i] = bb.getShort(6 + i * 4).toDouble(); ys[i] = bb.getShort(8 + i * 4).toDouble() }
+        }
+        val sb = StringBuilder()
+        val sg = complex[0x0146]
+        if (sg == null || sg.size < 6) {
+            for (i in 0 until count) sb.append(if (i == 0) "M" else "L").append(n(xs[i])).append(',').append(n(ys[i])).append(' ')
+            sb.append("Z")
+        } else {
+            val sb2 = ByteBuffer.wrap(sg).order(ByteOrder.LITTLE_ENDIAN)
+            val ns = sb2.getShort(0).toInt() and 0xFFFF
+            var pi = 0
+            loop@ for (i in 0 until ns) {
+                if (6 + i * 2 + 2 > sg.size) break
+                val w = sb2.getShort(6 + i * 2).toInt() and 0xFFFF
+                val type = w shr 13; val c = w and 0xFF
+                when (type) {
+                    0 -> for (k in 0 until maxOf(c, 1)) { if (pi >= count) break@loop; sb.append("L").append(n(xs[pi])).append(',').append(n(ys[pi])).append(' '); pi++ }
+                    1 -> for (k in 0 until c) { if (pi + 2 >= count) break@loop
+                        sb.append("C").append(n(xs[pi])).append(',').append(n(ys[pi])).append(' ').append(n(xs[pi + 1])).append(',').append(n(ys[pi + 1])).append(' ')
+                            .append(n(xs[pi + 2])).append(',').append(n(ys[pi + 2])).append(' '); pi += 3 }
+                    2 -> { if (pi >= count) break@loop; sb.append("M").append(n(xs[pi])).append(',').append(n(ys[pi])).append(' '); pi++ }
+                    3 -> sb.append("Z ")
+                    4 -> break@loop
+                    else -> break@loop
+                }
+            }
+        }
+        val l = props[0x0140] ?: 0; val t = props[0x0141] ?: 0
+        val r = props[0x0142] ?: (xs.max().toInt().coerceAtLeast(1)); val b = props[0x0143] ?: (ys.max().toInt().coerceAtLeast(1))
+        if (r <= l || b <= t) return null
+        return Path(sb.toString().trim(), l.toDouble(), t.toDouble(), (r - l).toDouble(), (b - t).toDouble())
+    }
+}

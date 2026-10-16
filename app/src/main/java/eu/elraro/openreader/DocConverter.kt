@@ -750,6 +750,13 @@ td{vertical-align:top;border:1px solid #999;padding:2pt 4pt;white-space:pre-wrap
                     val line = if (shp.props[0x01FF]?.let { it and 0x80008 == 0x80008 } == true) "border:1px solid #000;" else ""
                     "<div style=\"width:${fmt(w)}pt;min-height:${fmt(h)}pt;box-sizing:border-box;overflow:hidden;line-height:normal;text-align:left;text-indent:0;$fill$line\">$html</div>"
                 }
+                ?: Geometry.path(shp.props, shp.complex)?.let { g ->
+                    fun col(v: Int) = "#%02x%02x%02x".format(v and 255, (v shr 8) and 255, (v shr 16) and 255)
+                    val fillOn = shp.props[0x01BF]?.let { it and 0x100010 == 0x100010 } ?: shp.props.containsKey(0x0181)
+                    val lineOn = shp.props[0x01FF]?.let { it and 0x80008 == 0x80008 } ?: shp.props.containsKey(0x01C0)
+                    "<svg width=\"${fmt(w)}pt\" height=\"${fmt(h)}pt\" viewBox=\"${fmt(g.left)} ${fmt(g.top)} ${fmt(g.width)} ${fmt(g.height)}\" preserveAspectRatio=\"none\" style=\"overflow:visible\">" +
+                        "<path d=\"${g.d}\" fill=\"${if (fillOn) shp.props[0x0181]?.let { col(it) } ?: "#ffffff" else "none"}\" stroke=\"${if (lineOn) shp.props[0x01C0]?.let { col(it) } ?: "#000000" else "none"}\" vector-effect=\"non-scaling-stroke\"/></svg>"
+                }
                 ?: if (shp.props[0x01BF]?.let { it and 0x100010 == 0x100010 } == true || shp.props.containsKey(0x0181)) {
                     val fill = shp.props[0x0181]?.let { "#%02x%02x%02x".format(it and 255, (it shr 8) and 255, (it shr 16) and 255) } ?: "#ffffff"
                     "<div style=\"width:${fmt(w)}pt;height:${fmt(h)}pt;background:$fill\"></div>"
