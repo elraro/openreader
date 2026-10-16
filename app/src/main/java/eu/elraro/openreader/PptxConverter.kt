@@ -496,7 +496,10 @@ table.t td{overflow:hidden;vertical-align:top}
         val box = boxOf(gf.child("xfrm"), xf) ?: return
         val tbl = gf.find("tbl")
         if (tbl == null) {
-            s.out.append("<div class=\"sh\" style=\"left:${f(box.x)}px;top:${f(box.y)}px;width:${f(box.w)}px;height:${f(box.h)}px;border:1px dashed #999;align-items:center;justify-content:center;color:#777;font-size:12px\">Chart or diagram (not displayed)</div>")
+            val inner = Diagrams.chartSvg(s.env.pkg, part.rels, s.env.scheme, gf, box.w, box.h)
+                ?: Diagrams.smartArt(s.env.pkg, part.rels, s.env.scheme, gf, box.w, box.h)
+                ?: "<div style=\"width:100%;height:100%;border:1px dashed #999;box-sizing:border-box\"></div>"
+            s.out.append("<div class=\"sh\" style=\"left:${f(box.x)}px;top:${f(box.y)}px;width:${f(box.w)}px;height:${f(box.h)}px\">$inner</div>")
             return
         }
         val tblPr = tbl.child("tblPr")

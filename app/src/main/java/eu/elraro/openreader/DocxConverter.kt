@@ -436,9 +436,18 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
                         out.append("</a>")
                     } else runs(n, out, base)
                 }
-                "ins", "smartTag", "sdt", "sdtContent", "fldSimple", "customXml", "moveTo" -> runs(n, out, base)
+                "smartTag", "sdt", "sdtContent", "fldSimple", "customXml" -> runs(n, out, base)
+                "ins", "moveTo", "del", "moveFrom" -> {
+                    // tracked changes are shown like Word's "All Markup": insertions underlined, deletions struck through
+                    val saved = revision
+                    revision = if (n.name == "ins" || n.name == "moveTo") "color:#1a7f37;text-decoration:underline;" else "color:#cf222e;text-decoration:line-through;"
+                    runs(n, out, base)
+                    revision = saved
+                }
             }
         }
+
+        private var revision: String? = null
 
         private fun run(r: Node, out: StringBuilder, base: RunProps) {
             val rPr = r.child("rPr")
@@ -449,7 +458,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
             val content = StringBuilder()
             runContent(r, content)
             if (content.isEmpty()) return
-            val css = runCss(props, base)
+            val css = runCss(props, base) + (revision ?: "")
             fun wrap(x: CharSequence) = if (css.isEmpty() || x.isEmpty()) x else "<span style=\"$css\">$x</span>"
             if (tabSplit && content.contains(TAB)) {
                 // tabs go outside the span so the paragraph can be split at them
@@ -459,7 +468,7 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
 
         private fun runContent(r: Node, out: StringBuilder) {
             for (c in r.children) when (c.name) {
-                "t" -> out.append(esc(c.text.toString()))
+                "t", "delText" -> out.append(esc(c.text.toString()))
                 "tab", "ptab" -> out.append(if (tabSplit) TAB else "\t")
                 "br" -> if (c in skipBreaks) {} else when (c.attr("type")) {
                     "page" -> out.append("<span style=\"display:block;page-break-after:always;height:0\"></span>")
@@ -484,13 +493,22 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
 
         private fun emu(v: String?) = v?.toDoubleOrNull()?.div(12700)
 
+        private val scheme: ColorScheme by lazy { ColorScheme.parse(s.pkg.xml("word/theme/theme1.xml")) }
+
         private fun drawing(d: Node): String? {
             val extent = d.find("extent")
             val w = emu(extent?.attr("cx"))
             val h = emu(extent?.attr("cy"))
             val blip = d.find("blip")
             val inner: String
-            if (blip != null) {
+            val diagram = if (blip == null && w != null && h != null) d.find("graphicData")?.let { gd ->
+                val wpx = w * 4 / 3; val hpx = h * 4 / 3
+                (Diagrams.chartSvg(s.pkg, rels, scheme, gd, wpx, hpx) ?: Diagrams.smartArt(s.pkg, rels, scheme, gd, wpx, hpx))
+                    ?.let { "<span style=\"display:block;width:${fmt(w)}pt;height:${fmt(h)}pt;overflow:hidden\">$it</span>" }
+            } else null
+            if (diagram != null) {
+                inner = diagram
+            } else if (blip != null) {
                 val part = rels[blip.attr("embed")] ?: return null
                 val uri = s.pkg.imageDataUri(part)
                     ?: return "<span style=\"display:inline-block;width:${fmt(w ?: 40.0)}pt;height:${fmt(h ?: 20.0)}pt;border:1px dashed #999\"></span>"

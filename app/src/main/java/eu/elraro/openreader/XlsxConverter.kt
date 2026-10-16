@@ -19,20 +19,68 @@ object XlsxConverter {
         val tabs = StringBuilder()
         val body = StringBuilder()
         val used = HashSet<Int>()
-        sheets.forEachIndexed { i, s ->
-            val name = s.attr("name") ?: "Sheet${i + 1}"
+        val names = sheets.mapIndexed { i, s -> s.attr("name") ?: "Sheet${i + 1}" }
+        val paths = sheets.map { rels[it.attr("id")] }
+        val roots = paths.map { path -> path?.let { try { pkg.xml(it) } catch (e: Exception) { null } } }
+        val book = buildBook(names, roots, shared)
+        sheets.forEachIndexed { i, _ ->
+            val name = names[i]
             tabs.append("<a href=\"#s$i\">${esc(name)}</a>")
             body.append("<h2 id=\"s$i\">${esc(name)}</h2>")
-            val sheet = rels[s.attr("id")]?.let { pkg.xml(it) }
+            val sheet = roots[i]
             if (sheet == null) body.append("<p class=\"note\">Sheet could not be read.</p>")
-            else sheet(sheet, shared, styles, used, body)
+            else sheet(sheet, shared, styles, used, body, Ctx(pkg, scheme, book, name, paths[i]))
         }
         val css = StringBuilder()
         for (xf in used.sorted()) css.append(".x$xf{${styles.css(xf)}}\n")
         return page(title, tabs, body, css.toString())
     }
 
-    private fun sheet(root: Node, shared: List<String>, styles: XStyles, used: MutableSet<Int>, out: StringBuilder) {
+    private class Ctx(val pkg: OoxmlPackage, val scheme: ColorScheme, val book: Workbook, val name: String, val path: String?)
+
+    /** Raw values and formulas of every sheet, so formulas without a cached result can be calculated. */
+    private fun buildBook(names: List<String>, roots: List<Node?>, shared: List<String>): Workbook {
+        val book = Workbook()
+        roots.forEachIndexed { i, root ->
+            root ?: return@forEachIndexed
+            val masters = HashMap<String, Triple<Int, Int, String>>()
+            var rowNo = -1
+            for (row in root.child("sheetData")?.all("row").orEmpty()) {
+                rowNo = row.attr("r")?.toIntOrNull()?.minus(1) ?: (rowNo + 1)
+                if (rowNo >= 100000) break
+                var colNo = -1
+                for (c in row.all("c")) {
+                    colNo = c.attr("r")?.let { colIndex(it) } ?: (colNo + 1)
+                    if (colNo < 0 || colNo > 16383) continue
+                    val v = c.child("v")?.text?.toString()
+                    val value: Any? = when (c.attr("t")) {
+                        "s" -> v?.toIntOrNull()?.let { shared.getOrNull(it) }
+                        "inlineStr" -> c.child("is")?.let { richText(it) }
+                        "b" -> v == "1"
+                        "e" -> v?.let { XlError(it) }
+                        "str", "d" -> v
+                        else -> v?.toDoubleOrNull() ?: v
+                    }
+                    val f = c.child("f")
+                    var formula: String? = null; var dr = 0; var dc = 0
+                    if (f != null && v.isNullOrEmpty()) {
+                        val text = f.text.toString()
+                        if (f.attr("t") == "shared") {
+                            val si = f.attr("si") ?: ""
+                            if (text.isNotBlank()) { masters[si] = Triple(rowNo, colNo, text); formula = text }
+                            else masters[si]?.let { (mr, mc, mt) -> formula = mt; dr = rowNo - mr; dc = colNo - mc }
+                        } else if (text.isNotBlank()) formula = text
+                    } else if (f != null && f.attr("t") == "shared" && f.text.isNotBlank()) {
+                        masters[f.attr("si") ?: ""] = Triple(rowNo, colNo, f.text.toString())
+                    }
+                    book.put(names[i], rowNo, colNo, Workbook.Cell(value, formula, dr, dc))
+                }
+            }
+        }
+        return book
+    }
+
+    private fun sheet(root: Node, shared: List<String>, styles: XStyles, used: MutableSet<Int>, out: StringBuilder, ctx: Ctx) {
         val fmtPr = root.child("sheetFormatPr")
         val defRowH = fmtPr?.attr("defaultRowHeight")?.toDoubleOrNull() ?: 15.0
         val defColPx = fmtPr?.attr("defaultColWidth")?.toDoubleOrNull()?.let { Math.round(it * 7).toInt() } ?: 64
@@ -77,7 +125,10 @@ object XlsxConverter {
                 colNo = c.attr("r")?.let { colIndex(it) } ?: (colNo + 1)
                 if (colNo < 0 || colNo >= MAX_COLS) continue
                 val xf = c.attr("s")?.toIntOrNull() ?: 0
-                cells[colNo] = cellValue(c, shared, styles, xf)
+                cells[colNo] = if (c.child("f") != null && c.child("v")?.text.isNullOrEmpty()) {
+                    val (text, kind) = Workbook.format(ctx.book.eval(ctx.name, rowNo, colNo), styles.formatCode(xf)) ?: ("" to 0)
+                    XCell(text, kind, xf)
+                } else cellValue(c, shared, styles, xf)
                 if (colNo > maxCol) maxCol = colNo
             }
             rows[rowNo] = Row(
@@ -150,7 +201,41 @@ object XlsxConverter {
         }
         out.append("</table></div>")
         if (rowNo >= MAX_ROWS) out.append("<p class=\"note\">Showing the first $MAX_ROWS rows.</p>")
-        if (root.child("drawing") != null) out.append("<p class=\"note\">This sheet contains charts or images that are not displayed.</p>")
+        root.child("drawing")?.let { d -> drawings(ctx, d.attr("id"), ::px, colHidden, defRowH, rows.mapValues { it.value.ht }, out) }
+    }
+
+    /** Charts and pictures anchored on the sheet, shown below the table at their anchored size. */
+    private fun drawings(ctx: Ctx, relId: String?, px: (Int) -> Int, hidden: Set<Int>, defRowH: Double, rowH: Map<Int, Double?>, out: StringBuilder) {
+        val pkg = ctx.pkg
+        val part = ctx.path?.let { pkg.rels(it)[relId] } ?: return
+        val drawing = try { pkg.xml(part) } catch (e: Exception) { null } ?: return
+        val rels = pkg.rels(part)
+        val sb = StringBuilder()
+        fun num(n: Node?, k: String) = n?.child(k)?.text?.toString()?.toDoubleOrNull() ?: 0.0
+        for (a in drawing.children) {
+            if (a.name != "twoCellAnchor" && a.name != "oneCellAnchor" && a.name != "absoluteAnchor") continue
+            var w = 480.0; var h = 288.0
+            val ext = a.child("ext")
+            if (ext != null) { w = (ext.attr("cx")?.toDoubleOrNull() ?: 0.0) / 9525; h = (ext.attr("cy")?.toDoubleOrNull() ?: 0.0) / 9525 }
+            else if (a.name == "twoCellAnchor") {
+                val f = a.child("from"); val t = a.child("to")
+                val c0 = num(f, "col").toInt(); val c1 = num(t, "col").toInt(); val r0 = num(f, "row").toInt(); val r1 = num(t, "row").toInt()
+                w = (c0 until c1).filter { it !in hidden }.sumOf { px(it).toDouble() } + (num(t, "colOff") - num(f, "colOff")) / 9525
+                h = (r0 until r1).sumOf { (rowH[it] ?: defRowH) * 4 / 3 } + (num(t, "rowOff") - num(f, "rowOff")) / 9525
+            }
+            if (w < 20 || h < 20 || w > 4000 || h > 4000) continue
+            val frame = a.child("graphicFrame")
+            val pic = a.child("pic")
+            if (frame != null) {
+                val svg = Diagrams.chartSvg(pkg, rels, ctx.scheme, frame, w, h) { ctx.book.rangeValues(it) }
+                    ?: Diagrams.smartArt(pkg, rels, ctx.scheme, frame, w, h)
+                if (svg != null) sb.append("<div class=\"fig\">$svg</div>")
+            } else if (pic != null) {
+                val uri = rels[pic.find("blip")?.attr("embed")]?.let { pkg.imageDataUri(it) }
+                if (uri != null) sb.append("<div class=\"fig\"><img src=\"$uri\" style=\"width:${w.toInt()}px;height:${h.toInt()}px\"></div>")
+            }
+        }
+        out.append(sb)
     }
 
     private fun fmtPt(d: Double) = String.format(java.util.Locale.US, "%.2f", d).trimEnd('0').trimEnd('.')
@@ -177,6 +262,7 @@ object XlsxConverter {
 .tabs a{margin-right:12px;color:#1565c0;text-decoration:none;font-weight:bold}
 h2{font-size:1.1em;margin:14px 8px 6px}
 .wrap{overflow-x:auto;padding:0 8px}
+.fig{margin:10px 8px}
 .note{margin:6px 8px;color:#666;font-style:italic;font-size:.9em}
 table.sh{border-collapse:collapse;table-layout:fixed;font-family:'Calibri',sans-serif;font-size:11pt}
 table.sh td,table.sh th{padding:0 3px;white-space:pre;overflow:hidden;vertical-align:bottom;box-sizing:border-box;border:0 solid transparent}

@@ -105,6 +105,7 @@ class OoxmlPackage(file: File) : AutoCloseable {
             "bmp" -> "image/bmp"
             "webp" -> "image/webp"
             "svg" -> "image/svg+xml"
+            "emf", "wmf" -> return bytes(part)?.takeIf { it.size < 8_000_000 }?.let { Metafile.toSvgDataUri(it) }
             else -> return null
         }
         val b = bytes(part) ?: return null
