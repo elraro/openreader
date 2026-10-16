@@ -20,6 +20,7 @@ object Metafile {
     private fun le(b: ByteArray, o: Int) = (b[o].toInt() and 255) or ((b[o + 1].toInt() and 255) shl 8) or ((b[o + 2].toInt() and 255) shl 16) or ((b[o + 3].toInt() and 255) shl 24)
 
     private fun rgb(c: Int) = "rgb(${c and 255},${(c shr 8) and 255},${(c shr 16) and 255})"
+    private fun n6(v: Double) = String.format(java.util.Locale.US, "%.6f", v).trimEnd('0').trimEnd('.').ifEmpty { "0" }
     private fun n(v: Number) = String.format(java.util.Locale.US, "%.2f", v.toDouble()).trimEnd('0').trimEnd('.').ifEmpty { "0" }
 
     /** Wraps a DIB (BITMAPINFO + bits) into a BMP data URI. */
@@ -78,6 +79,18 @@ object Metafile {
         var winX = 0.0; var winY = 0.0; var winW = 0.0; var winH = 0.0
         var textAlign = 0
         var count = 0
+        var vpX = 0.0; var vpY = 0.0; var vpW = 0.0; var vpH = 0.0
+        var world = doubleArrayOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+        /** a∘b: apply b first, then a (SVG matrix order [a b c d e f]). */
+        fun mul(a: DoubleArray, b: DoubleArray) = doubleArrayOf(
+            a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+            a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5])
+
+        fun mapping(): DoubleArray {
+            val sx = if (winW != 0.0 && vpW != 0.0) vpW / winW else 1.0; val sy = if (winH != 0.0 && vpH != 0.0) vpH / winH else 1.0
+            return doubleArrayOf(sx, 0.0, 0.0, sy, vpX - winX * sx, vpY - winY * sy)
+        }
 
         fun svg(): String? {
             var bx = bb.getInt(8).toDouble(); var by = bb.getInt(12).toDouble()
@@ -86,12 +99,18 @@ object Metafile {
             while (pos + 8 <= d.size) {
                 val type = bb.getInt(pos); val size = bb.getInt(pos + 4)
                 if (size < 8 || pos + size > d.size) break
+                val before = body.length
                 record(type, pos, size)
+                if (body.length > before) {
+                    val m = mul(mapping(), world)
+                    if (m[0] != 1.0 || m[1] != 0.0 || m[2] != 0.0 || m[3] != 1.0 || m[4] != 0.0 || m[5] != 0.0) {
+                        body.insert(before, "<g transform=\"matrix(${m.joinToString(" ") { n6(it) }})\">"); body.append("</g>")
+                    }
+                }
                 if (type == 14) break
                 pos += size
                 if (++count > 200_000) break
             }
-            if (winW > 0 && winH > 0) { bx = winX; by = winY; bw = winW; bh = winH }
             if (bw <= 0 || bh <= 0) return null
             return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"${n(bx)} ${n(by)} ${n(bw)} ${n(bh)}\" width=\"${n(bw)}\" height=\"${n(bh)}\">$body</svg>"
         }
@@ -111,6 +130,15 @@ object Metafile {
             when (type) {
                 9 -> { winW = i(p + 8).toDouble(); winH = i(p + 12).toDouble() }
                 10 -> { winX = i(p + 8).toDouble(); winY = i(p + 12).toDouble() }
+                11 -> { vpW = i(p + 8).toDouble(); vpH = i(p + 12).toDouble() }
+                12 -> { vpX = i(p + 8).toDouble(); vpY = i(p + 12).toDouble() }
+                35 -> world = doubleArrayOf(bb.getFloat(p + 8).toDouble(), bb.getFloat(p + 12).toDouble(), bb.getFloat(p + 16).toDouble(),
+                    bb.getFloat(p + 20).toDouble(), bb.getFloat(p + 24).toDouble(), bb.getFloat(p + 28).toDouble())
+                36 -> {
+                    val x = doubleArrayOf(bb.getFloat(p + 8).toDouble(), bb.getFloat(p + 12).toDouble(), bb.getFloat(p + 16).toDouble(),
+                        bb.getFloat(p + 20).toDouble(), bb.getFloat(p + 24).toDouble(), bb.getFloat(p + 28).toDouble())
+                    world = when (i(p + 32)) { 1 -> doubleArrayOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0); 2 -> mul(world, x); 3 -> mul(x, world); else -> x }
+                }
                 24 -> textColor = i(p + 8)
                 22 -> textAlign = i(p + 8)
                 27 -> { curX = i(p + 8).toDouble(); curY = i(p + 12).toDouble(); if (inPath) path.append("M${n(curX)},${n(curY)}") }
@@ -234,10 +262,13 @@ object Metafile {
                 record(fn, pos + 6, size - 6)
                 pos += size
             }
-            val vx = if (extX != 0.0) orgX else l; val vy = if (extY != 0.0) orgY else t
-            val vw = kotlin.math.abs(if (extX != 0.0) extX else r - l); val vh = kotlin.math.abs(if (extY != 0.0) extY else b - t)
+            val ox = if (extX != 0.0) orgX else l; val oy = if (extY != 0.0) orgY else t
+            val ex = if (extX != 0.0) extX else r - l; val ey = if (extY != 0.0) extY else b - t
+            val vw = kotlin.math.abs(ex); val vh = kotlin.math.abs(ey)
             if (vw <= 0 || vh <= 0) return null
-            return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"${n(vx)} ${n(vy)} ${n(vw)} ${n(vh)}\" width=\"${n(vw)}\" height=\"${n(vh)}\">$body</svg>"
+            val sx = vw / ex; val sy = vh / ey // negative extents flip the axis
+            return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ${n(vw)} ${n(vh)}\" width=\"${n(vw)}\" height=\"${n(vh)}\">" +
+                "<g transform=\"matrix(${n6(sx)} 0 0 ${n6(sy)} ${n6(-ox * sx)} ${n6(-oy * sy)})\">$body</g></svg>"
         }
 
         fun record(fn: Int, p: Int, len: Int) {

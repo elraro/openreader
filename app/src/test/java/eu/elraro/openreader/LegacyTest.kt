@@ -41,4 +41,14 @@ class LegacyTest {
         assertTrue(html, html.contains("This is a test title"))
         assertTrue(html.contains("This is page two"))
     }
+
+    @Test
+    fun pptPicturesAndFormatting() {
+        val html = PptConverter.toHtml(load("pictures.ppt"), "t")
+        assertTrue(Regex("<img src=\"data:image/(jpeg|png|svg\\+xml)").findAll(html).count() >= 4)
+        val tb = PptConverter.toHtml(load("with_textbox.ppt"), "t")
+        assertTrue(tb.contains("I am just a poor boy"))
+        assertTrue(tb.contains("font-weight:bold"))
+        assertTrue(tb.contains("class=\"sh\""))
+    }
 }
