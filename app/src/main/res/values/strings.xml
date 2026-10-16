@@ -1,10 +1,22 @@
 <resources>
     <string name="app_name">OpenReader</string>
-    <string name="open_document">Open document</string>
-    <string name="export_pdf">Export PDF</string>
     <string name="empty_hint">Open a Word, Excel or PowerPoint document (.docx .xlsx .pptx .doc .xls .ppt).</string>
     <string name="error_unsupported">Unsupported file. Supported: .docx, .xlsx, .pptx, .doc, .xls and .ppt.</string>
     <string name="error_read">Could not read document: %1$s</string>
     <string name="error_encrypted">This document is password-protected and cannot be opened.</string>
     <string name="error_too_large">This document is too large or too complex to open on this device.</string>
+    <string name="open_document">Open document</string>
+    <string name="export_pdf">Export PDF</string>
+    <string name="settings">Settings</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="dark_documents">Dark mode for documents (in dark theme)</string>
+    <string name="language">Language</string>
+    <string name="language_system">System default</string>
+    <string name="about">About</string>
+    <string name="about_text">Free and open-source reader for Word, Excel and PowerPoint documents.</string>
+    <string name="source_code">Source code on GitHub</string>
+    <string name="donate">Donate via PayPal</string>
 </resources>

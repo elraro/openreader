@@ -1,0 +1,21 @@
+<resources>
+    <string name="empty_hint">Apri un documento Word, Excel o PowerPoint (.docx .xlsx .pptx .doc .xls .ppt).</string>
+    <string name="error_unsupported">File non supportato. Formati supportati: .docx, .xlsx, .pptx, .doc, .xls e .ppt.</string>
+    <string name="error_read">Impossibile leggere il documento: %1$s</string>
+    <string name="error_encrypted">Questo documento è protetto da password e non può essere aperto.</string>
+    <string name="error_too_large">Questo documento è troppo grande o complesso per essere aperto su questo dispositivo.</string>
+    <string name="open_document">Apri documento</string>
+    <string name="export_pdf">Esporta in PDF</string>
+    <string name="settings">Impostazioni</string>
+    <string name="theme">Tema</string>
+    <string name="theme_system">Predefinito di sistema</string>
+    <string name="theme_light">Chiaro</string>
+    <string name="theme_dark">Scuro</string>
+    <string name="dark_documents">Modalità scura per i documenti (con tema scuro)</string>
+    <string name="language">Lingua</string>
+    <string name="language_system">Predefinito di sistema</string>
+    <string name="about">Informazioni</string>
+    <string name="about_text">Lettore libero e open source per documenti Word, Excel e PowerPoint.</string>
+    <string name="source_code">Codice sorgente su GitHub</string>
+    <string name="donate">Dona con PayPal</string>
+</resources>

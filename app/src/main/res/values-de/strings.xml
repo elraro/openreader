@@ -1,0 +1,21 @@
+<resources>
+    <string name="empty_hint">Öffne ein Word-, Excel- oder PowerPoint-Dokument (.docx .xlsx .pptx .doc .xls .ppt).</string>
+    <string name="error_unsupported">Nicht unterstützte Datei. Unterstützt: .docx, .xlsx, .pptx, .doc, .xls und .ppt.</string>
+    <string name="error_read">Dokument konnte nicht gelesen werden: %1$s</string>
+    <string name="error_encrypted">Dieses Dokument ist passwortgeschützt und kann nicht geöffnet werden.</string>
+    <string name="error_too_large">Dieses Dokument ist zu groß oder zu komplex, um auf diesem Gerät geöffnet zu werden.</string>
+    <string name="open_document">Dokument öffnen</string>
+    <string name="export_pdf">Als PDF exportieren</string>
+    <string name="settings">Einstellungen</string>
+    <string name="theme">Design</string>
+    <string name="theme_system">Systemstandard</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="dark_documents">Dunkelmodus für Dokumente (bei dunklem Design)</string>
+    <string name="language">Sprache</string>
+    <string name="language_system">Systemstandard</string>
+    <string name="about">Über</string>
+    <string name="about_text">Freier Open-Source-Reader für Word-, Excel- und PowerPoint-Dokumente.</string>
+    <string name="source_code">Quellcode auf GitHub</string>
+    <string name="donate">Spenden über PayPal</string>
+</resources>

@@ -1,0 +1,21 @@
+<resources>
+    <string name="empty_hint">打开 Word、Excel 或 PowerPoint 文档（.docx .xlsx .pptx .doc .xls .ppt）。</string>
+    <string name="error_unsupported">不支持的文件。支持：.docx、.xlsx、.pptx、.doc、.xls 和 .ppt。</string>
+    <string name="error_read">无法读取文档：%1$s</string>
+    <string name="error_encrypted">此文档受密码保护，无法打开。</string>
+    <string name="error_too_large">此文档过大或过于复杂，无法在此设备上打开。</string>
+    <string name="open_document">打开文档</string>
+    <string name="export_pdf">导出为 PDF</string>
+    <string name="settings">设置</string>
+    <string name="theme">主题</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="dark_documents">文档深色模式（深色主题下）</string>
+    <string name="language">语言</string>
+    <string name="language_system">跟随系统</string>
+    <string name="about">关于</string>
+    <string name="about_text">免费开源的 Word、Excel 和 PowerPoint 文档阅读器。</string>
+    <string name="source_code">GitHub 源代码</string>
+    <string name="donate">通过 PayPal 捐赠</string>
+</resources>

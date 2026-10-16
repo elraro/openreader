@@ -1,0 +1,21 @@
+<resources>
+    <string name="empty_hint">Откройте документ Word, Excel или PowerPoint (.docx .xlsx .pptx .doc .xls .ppt).</string>
+    <string name="error_unsupported">Неподдерживаемый файл. Поддерживаются: .docx, .xlsx, .pptx, .doc, .xls и .ppt.</string>
+    <string name="error_read">Не удалось прочитать документ: %1$s</string>
+    <string name="error_encrypted">Документ защищён паролем и не может быть открыт.</string>
+    <string name="error_too_large">Документ слишком большой или сложный для открытия на этом устройстве.</string>
+    <string name="open_document">Открыть документ</string>
+    <string name="export_pdf">Экспорт в PDF</string>
+    <string name="settings">Настройки</string>
+    <string name="theme">Тема</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="dark_documents">Тёмный режим для документов (при тёмной теме)</string>
+    <string name="language">Язык</string>
+    <string name="language_system">Как в системе</string>
+    <string name="about">О приложении</string>
+    <string name="about_text">Свободная программа с открытым кодом для чтения документов Word, Excel и PowerPoint.</string>
+    <string name="source_code">Исходный код на GitHub</string>
+    <string name="donate">Пожертвовать через PayPal</string>
+</resources>

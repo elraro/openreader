@@ -1,0 +1,21 @@
+<resources>
+    <string name="empty_hint">Word、Excel、PowerPoint のドキュメント（.docx .xlsx .pptx .doc .xls .ppt）を開きます。</string>
+    <string name="error_unsupported">非対応のファイルです。対応形式: .docx, .xlsx, .pptx, .doc, .xls, .ppt。</string>
+    <string name="error_read">ドキュメントを読み込めません: %1$s</string>
+    <string name="error_encrypted">このドキュメントはパスワードで保護されているため開けません。</string>
+    <string name="error_too_large">このドキュメントは大きすぎる、または複雑すぎるため、この端末では開けません。</string>
+    <string name="open_document">ドキュメントを開く</string>
+    <string name="export_pdf">PDF に書き出す</string>
+    <string name="settings">設定</string>
+    <string name="theme">テーマ</string>
+    <string name="theme_system">システムのデフォルト</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="dark_documents">ドキュメントのダークモード（ダークテーマ時）</string>
+    <string name="language">言語</string>
+    <string name="language_system">システムのデフォルト</string>
+    <string name="about">このアプリについて</string>
+    <string name="about_text">Word、Excel、PowerPoint ドキュメント用の無料のオープンソースリーダーです。</string>
+    <string name="source_code">GitHub のソースコード</string>
+    <string name="donate">PayPal で寄付</string>
+</resources>

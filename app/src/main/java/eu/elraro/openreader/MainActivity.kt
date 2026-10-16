@@ -1,6 +1,7 @@
 package eu.elraro.openreader
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -35,7 +36,18 @@ class MainActivity : Activity() {
     private var pageLoaded = false
     private val worker = Executors.newSingleThreadExecutor()
 
+    private var currentUri: Uri? = null
+
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(Prefs.wrap(newBase))
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        currentUri?.let { outState.putString("uri", it.toString()) }
+    }
+
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(Prefs.themeRes(this))
         super.onCreate(savedInstanceState)
         val root = FrameLayout(this)
 
@@ -50,6 +62,9 @@ class MainActivity : Activity() {
             settings.loadWithOverviewMode = true
             settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
             settings.textZoom = 100
+            if (Prefs.isDark(this@MainActivity) && Prefs.darkDocuments(this@MainActivity) &&
+                android.os.Build.VERSION.SDK_INT >= 29) settings.forceDark = WebSettings.FORCE_DARK_ON
+            setBackgroundColor(if (Prefs.isDark(this@MainActivity)) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val url = request.url.toString()
@@ -104,7 +119,7 @@ class MainActivity : Activity() {
         root.addView(spinner, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
         setContentView(root)
 
-        val uri = incomingUri(intent)
+        val uri = savedInstanceState?.getString("uri")?.let { Uri.parse(it) } ?: incomingUri(intent)
         if (uri != null) openUri(uri)
     }
 
@@ -121,6 +136,7 @@ class MainActivity : Activity() {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, MENU_OPEN, 0, R.string.open_document).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         menu.add(0, MENU_PDF, 1, R.string.export_pdf).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+        menu.add(0, MENU_SETTINGS, 2, R.string.settings).setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
         return true
     }
 
@@ -132,6 +148,7 @@ class MainActivity : Activity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
         MENU_OPEN -> { pickDocument(); true }
         MENU_PDF -> { exportPdf(); true }
+        MENU_SETTINGS -> { startActivityForResult(Intent(this, SettingsActivity::class.java), REQ_SETTINGS); true }
         else -> super.onOptionsItemSelected(item)
     }
 
@@ -148,9 +165,11 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_OPEN && resultCode == RESULT_OK) data?.data?.let { openUri(it) }
+        if (requestCode == REQ_SETTINGS && resultCode == RESULT_OK) recreate()
     }
 
     private fun openUri(uri: Uri) {
+        currentUri = uri
         pageLoaded = false
         invalidateOptionsMenu()
         spinner.visibility = View.VISIBLE
@@ -240,6 +259,8 @@ class MainActivity : Activity() {
         private const val REQ_OPEN = 1
         private const val MENU_OPEN = 1
         private const val MENU_PDF = 2
+        private const val MENU_SETTINGS = 3
+        private const val REQ_SETTINGS = 2
         private const val MIME_DOC = "application/msword"
         private const val MIME_XLS = "application/vnd.ms-excel"
         private const val MIME_PPT = "application/vnd.ms-powerpoint"
