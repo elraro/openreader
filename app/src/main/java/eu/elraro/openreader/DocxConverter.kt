@@ -428,20 +428,22 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
         private fun runs(parent: Node, out: StringBuilder, base: RunProps) {
             for (n in parent.children) when (n.name) {
                 "r" -> {
-                    val fc = n.child("fldChar")?.attr("fldCharType")
-                    val instrText = n.child("instrText")
-                    when {
-                        fc == "begin" -> fieldInstr = StringBuilder()
-                        instrText != null -> fieldInstr?.append(instrText.text)
-                        fc == "separate" -> {
-                            val i = fieldInstr?.toString()?.trim()?.uppercase().orEmpty()
-                            fieldInstr = null
-                            fieldClose = when { i.startsWith("PAGE") -> "fpg"; i.startsWith("NUMPAGES") -> "fnp"; else -> null }
-                            fieldClose?.let { out.append("<span class=\"$it\">") }
+                    if (n.children.any { it.name == "fldChar" || it.name == "instrText" }) {
+                        for (c in n.children) when {
+                            c.name == "instrText" -> fields.lastOrNull()?.instr?.append(c.text)
+                            c.name != "fldChar" -> {}
+                            c.attr("fldCharType") == "begin" -> fields.add(Field(StringBuilder()))
+                            c.attr("fldCharType") == "separate" -> fields.lastOrNull()?.let { f ->
+                                val code = f.instr?.toString()?.trim()?.uppercase()?.substringBefore(' ').orEmpty()
+                                f.instr = null
+                                f.close = when (code) { "PAGE" -> "fpg"; "NUMPAGES" -> "fnp"; else -> null }
+                                f.close?.let { out.append("<span class=\"$it\">") }
+                            }
+                            c.attr("fldCharType") == "end" -> fields.removeLastOrNull()?.let { f ->
+                                if (f.close != null) out.append("</span>")
+                            }
                         }
-                        fc == "end" -> { if (fieldClose != null) out.append("</span>"); fieldClose = null; fieldInstr = null }
-                        fieldInstr == null -> run(n, out, base)
-                    }
+                    } else if (fields.none { it.instr != null }) run(n, out, base)
                 }
                 "fldSimple" -> {
                     val i = n.attr("instr")?.trim()?.uppercase().orEmpty()
@@ -470,8 +472,8 @@ hr.fnsep{width:30%;margin:12pt 0 4pt 0;border:0;border-top:1px solid #000}
         }
 
         private var revision: String? = null
-        private var fieldInstr: StringBuilder? = null
-        private var fieldClose: String? = null
+        private class Field(var instr: StringBuilder?, var close: String? = null)
+        private val fields = ArrayList<Field>()
 
         private fun run(r: Node, out: StringBuilder, base: RunProps) {
             val rPr = r.child("rPr")
